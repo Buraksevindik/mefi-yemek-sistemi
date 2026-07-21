@@ -1,0 +1,93 @@
+{
+  "Pazartesi": {
+    "corbalar": [
+      "EZOGELİN ÇORBASI",
+      "YAYLA ÇORBASI"
+    ],
+    "ana_yemekler": [
+      "GÜVEÇTE KURU FASULYE",
+      "ÇİFTLİK KEBABI",
+      "ETLİ PATATES",
+      "SEBZELİ KÖFTE",
+      "KÖRİ SOSLU TAVUK",
+      "TAVUK SOTE",
+      "PATLICAN KAVURMA"
+    ],
+    "ekstralar": "SORULACAK"
+  },
+  "Salı": {
+    "corbalar": [
+      "MERCİMEK ÇORBASI",
+      "DOMATES ÇORBASI"
+    ],
+    "ana_yemekler": [
+      "GÜVEÇTE NOHUT",
+      "ARNAVUT CİĞERİ",
+      "KAĞIT KEBABI",
+      "İZMİR KÖFTE",
+      "TAVUK HAŞLAMA",
+      "DOMATESLİ BİBERLİ TAVUK IZGARA",
+      "ZEYTİNYAĞLI BAMYA"
+    ],
+    "ekstralar": "SORULACAK"
+  },
+  "Çarşamba": {
+    "corbalar": [
+      "EZOGELİN ÇORBASI",
+      "KREMALI MANTAR ÇORBASI"
+    ],
+    "ana_yemekler": [
+      "GÜVEÇTE KURU FASULYE",
+      "PATLICAN KEBAP",
+      "KAŞARLI ÇİMEN KEBABI",
+      "ROSTO KÖFTE",
+      "ÇITIR TAVUK",
+      "TAVUK SARMA",
+      "SEBZE GRATEN"
+    ],
+    "ekstralar": "SORULACAK"
+  },
+  "Perşembe": {
+    "corbalar": [
+      "MERCİMEK ÇORBASI",
+      "ARAP ÇORBASI"
+    ],
+    "ana_yemekler": [
+      "GÜVEÇTE NOHUT",
+      "ET SOTE",
+      "ELBASAN TAVA",
+      "FIRIN KÖFTE",
+      "SOYA SOSLU TAVUK",
+      "PATATES YATAĞINDA TAVUK SOTE",
+      "TAZE FASULYE"
+    ],
+    "ekstralar": "SORULACAK"
+  },
+  "Cuma": {
+    "corbalar": [
+      "EZOGELİN ÇORBASI",
+      "DEREOTLU HAVUÇ ÇORBASI"
+    ],
+    "ana_yemekler": [
+      "GÜVEÇTE KURU FASULYE",
+      "ETLİ GÜVEÇ",
+      "YÜREK SOTE",
+      "KADINBUDU KÖFTE",
+      "PÜRELİ MEXICAN CHICKEN",
+      "SARAY KEBABI",
+      "BİBER DOLMA"
+    ],
+    "ekstralar": "SORULACAK"
+  },
+  "Cumartesi": {
+    "corbalar": [
+      "MERCİMEK ÇORBASI"
+    ],
+    "ana_yemekler": [
+      "GÜVEÇTE NOHUT",
+      "USTAM KEBAP",
+      "TAVUK TANTUNİ"
+    ],
+    "ekstralar": "SORULACAK"
+  }
+}
