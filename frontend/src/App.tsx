@@ -1,127 +1,291 @@
-import { useState } from 'react';
-import menuData from './menu.json';
-import './App.css';
-
-const SEND_URL = "https://graph.facebook.com/v25.0/1125395517333883/messages";
-const ACCESS_TOKEN = "EAAOvH6ZA7TjwBSEtF586ZAezlvOiYT9ZC3wNPubLbtkwb2rN1jVw1q4TZAUdvWKXTA00meksiZC6JMj1lfYRSXaB1uvgCJLuRpNu32kTZB9ZCyeJUBeH2tRXvKg8YT8rCW2yz4CoZC3urS07uozGHKNt6ZBdLcT9fC2a0ZBewXyri0OdOClzdHtwcLvZBZC5KpOlbX9EQslmUezddR6hqIjVAs5HgV4XgX2MA8VhAvZAFedSmzkNLz1PnVOD3PIjhKT5cqK1itBAZAz26fA22ZBVzdewnu0Yy8ZB";
+import Admin from "./Admin";
+import { useEffect, useState } from "react";
+import {
+  doc,
+  getDoc,
+  collection,
+  addDoc,
+  query,
+  where,
+  getDocs,
+} from "firebase/firestore";
+import { db } from "./services/firebase";
+import { auth } from "./services/firebase";
+import {
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+} from "firebase/auth";
 
 function App() {
-  const [status, setStatus] = useState<string>('Hazır');
-  // Kullanıcının yaptığı seçimleri tutmak için state (Örn: { Pazartesi: { corba: '...', yemek: '...' } })
-  const [secimler, setSecimler] = useState<{ [key: string]: { corba?: string; yemek?: string } }>({});
+  const [menu, setMenu] = useState<any>(null);
+  const [secimler, setSecimler] = useState<{ [kategori: string]: string }>({});
+  const [gonderildi, setGonderildi] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const adminModu = true;
 
-  const handleSelectionChange = (gun: string, tip: 'corba' | 'yemek', deger: string) => {
-    setSecimler(prev => ({
-      ...prev,
-      [gun]: {
-        ...prev[gun],
-        [tip]: deger
-      }
-    }));
-  };
 
-  const sendOrderToWhatsApp = async () => {
-    setStatus('Sipariş gönderiliyor...');
-    
-    // Seçimleri metne dökelim
-    let siparisMetni = "🍽️ *Günlük Yemek Seçimlerim*\n\n";
-    Object.entries(secimler).forEach(([gun, detay]) => {
-      siparisMetni += `*${gun}:*\n`;
-      if (detay.corba) siparisMetni += `- Çorba: ${detay.corba}\n`;
-      if (detay.yemek) siparisMetni += `- Ana Yemek: ${detay.yemek}\n`;
-      siparisMetni += `\n`;
-    });
+  useEffect(() => {
+    const fetchMenu = async () => {
+      try {
+        const docRef = doc(db, "menuler", "aktif_menu");
+        const docSnap = await getDoc(docRef);
 
-    const payload = {
-      messaging_product: "whatsapp",
-      to: "905539318881", // Test numarası
-      type: "text",
-      text: {
-        body: siparisMetni
+        if (docSnap.exists()) {
+          setMenu(docSnap.data());
+        } else {
+          console.log("Aktif menü bulunamadı!");
+        }
+      } catch (error) {
+        console.error("Menü çekilirken hata oluştu:", error);
       }
     };
 
-    try {
-      const response = await fetch(SEND_URL, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${ACCESS_TOKEN}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
+    fetchMenu();
+  }, []);
+const girisYap = async () => {
+  try {
+    const provider = new GoogleAuthProvider();
 
-      const data = await response.json();
-      
-      if (response.ok) {
-        setStatus('Başarılı! Sipariş WhatsApp ile gönderildi.');
-        alert("Siparişler başarıyla gönderildi!");
-      } else {
-        setStatus(`Hata: ${data.error?.message || 'Bilinmeyen hata'}`);
-      }
-    } catch (error) {
-      console.error("Hata oluştu:", error);
-      setStatus('Bağlantı hatası oluştu.');
-    }
+    provider.setCustomParameters({
+      prompt: "select_account",
+    });
+
+    const result = await signInWithPopup(auth, provider);
+
+    const kullanici = result.user;
+
+if (
+  !kullanici.email?.endsWith("@akdogan.tech") &&
+  kullanici.email !== "sevindikburak2004@gmail.com"
+) {
+  alert("Sadece Akdoğan çalışanları giriş yapabilir.");
+  await signOut(auth);
+  return;
+}
+
+    setUser(kullanici);
+  } catch (error) {
+    console.error(error);
+  }
+};
+  const gunler = [
+    "Pazar",
+    "Pazartesi",
+    "Sali",
+    "Carsamba",
+    "Persembe",
+    "Cuma",
+    "Cumartesi",
+  ];
+
+  const bugun = gunler[new Date().getDay()];
+  const bugununMenusu = menu?.[bugun];
+
+  const yemekSec = (kategori: string, yemek: string) => {
+    setSecimler((prev) => ({
+      ...prev,
+      [kategori]: prev[kategori] === yemek ? "" : yemek,
+    }));
   };
 
+  const siparisiOnayla = async () => {
+    const gecerliSecimler = Object.values(secimler).filter(
+      (yemek) => yemek !== ""
+    );
+
+    if (gecerliSecimler.length === 0) {
+      alert("Lütfen en az bir yemek seçin!");
+      return;
+    }
+
+    try {
+      const siparislerRef = collection(db, "siparisler");
+
+const q = query(
+  siparislerRef,
+  where("uid", "==", user.uid),
+  where("gun", "==", bugun)
+);
+
+const mevcutSiparis = await getDocs(q);
+
+if (!mevcutSiparis.empty) {
+  alert("Bugün zaten sipariş verdiniz.");
+  return;
+}
+      await addDoc(collection(db, "siparisler"), {
+isim: user.displayName,
+email: user.email,
+uid: user.uid,
+        secimler: gecerliSecimler,
+        gun: bugun,
+        tarih: new Date().toISOString(),
+      });
+
+      setGonderildi(true);
+    } catch (error) {
+      console.error("Sipariş gönderilemedi:", error);
+      alert("Bir hata oluştu.");
+    }
+  };
+  if (adminModu) {
+  return <Admin />;
+}
+if (!user) {
   return (
-    <div style={{ padding: "30px", fontFamily: "sans-serif", maxWidth: "800px", margin: "0 auto" }}>
-      <h1 style={{ textAlign: "center" }}>Mefi Yemek Seçim Sistemi</h1>
-      <p style={{ textAlign: "center" }}>Lütfen haftalık menüden yemeklerinizi seçin ve WhatsApp üzerinden iletin.</p>
-      
-      {/* Menü Listeleme Alanı */}
-      <div style={{ marginTop: "20px" }}>
-        {Object.entries(menuData).map(([gun, detay]: [string, any]) => (
-          <div key={gun} style={{ marginBottom: "20px", padding: "20px", border: "1px solid #ddd", borderRadius: "8px", background: "#fff" }}>
-            <h3>{gun}</h3>
-            
-            <div style={{ marginTop: "10px" }}>
-              <strong>Çorbalar:</strong>
-              <div style={{ display: "flex", gap: "10px", marginTop: "5px", flexWrap: "wrap" }}>
-                {detay.corbalar.map((corba: string, idx: number) => (
-                  <label key={idx} style={{ cursor: "pointer", background: "#f1f1f1", padding: "6px 10px", borderRadius: "4px" }}>
-                    <input 
-                      type="radio" 
-                      name={`corba-${gun}`} 
-                      value={corba}
-                      onChange={() => handleSelectionChange(gun, 'corba', corba)}
-                    /> {corba}
-                  </label>
-                ))}
-              </div>
-            </div>
+    <div style={{ padding: "20px" }}>
+      <h1>MEFİ Menü Sistemi</h1>
 
-            <div style={{ marginTop: "15px" }}>
-              <strong>Ana Yemekler:</strong>
-              <div style={{ display: "flex", flexDirection: "column", gap: "5px", marginTop: "5px" }}>
-                {detay.ana_yemekler.map((yemek: string, idx: number) => (
-                  <label key={idx} style={{ cursor: "pointer" }}>
-                    <input 
-                      type="radio" 
-                      name={`yemek-${gun}`} 
-                      value={yemek}
-                      onChange={() => handleSelectionChange(gun, 'yemek', yemek)}
-                    /> {yemek}
-                  </label>
-                ))}
-              </div>
+      <button onClick={girisYap}>
+        Google ile Giriş Yap
+      </button>
+    </div>
+  );
+}
+
+  if (gonderildi) {
+    return (
+      <div style={{ padding: "20px" }}>
+        <h2>Siparişiniz başarıyla alındı! Afiyet olsun.</h2>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        padding: "20px",
+        maxWidth: "600px",
+        margin: "0 auto",
+        fontFamily: "sans-serif",
+      }}
+    >
+      <h1>MEFİ Menü & Sipariş</h1>
+
+<button
+  onClick={async () => {
+    await signOut(auth);
+    setUser(null);
+  }}
+>
+  Çıkış Yap
+</button>
+
+      {!menu ? (
+        <p>Menü yükleniyor...</p>
+      ) : !bugununMenusu ? (
+        <p>Bugüne ait menü bulunamadı.</p>
+      ) : (
+        <div>
+          <h3>{bugun} Menüsü (Her kategoriden en fazla 1 tane):</h3>
+
+          {Object.keys(bugununMenusu).map((kategori) => (
+            <div
+              key={kategori}
+              style={{
+                marginBottom: "20px",
+                padding: "15px",
+                border: "1px solid #ddd",
+                borderRadius: "8px",
+                background: "#fff",
+              }}
+            >
+              <h4
+                style={{
+                  textTransform: "capitalize",
+                  color: "#333",
+                  marginTop: 0,
+                }}
+              >
+                {kategori}
+              </h4>
+
+              <ul
+                style={{
+                  listStyleType: "none",
+                  padding: 0,
+                }}
+              >
+                {bugununMenusu[kategori].map(
+                  (yemek: string, index: number) => {
+                    const seciliMi = secimler[kategori] === yemek;
+
+                    return (
+                      <li
+                        key={index}
+                        style={{
+                          margin: "10px 0",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                        }}
+                      >
+                        <button
+                          onClick={() => yemekSec(kategori, yemek)}
+                          style={{
+                            background: seciliMi ? "#4CAF50" : "#f0f0f0",
+                            color: seciliMi ? "#fff" : "#000",
+                            padding: "6px 12px",
+                            border: "1px solid #ccc",
+                            cursor: "pointer",
+                            borderRadius: "4px",
+                            minWidth: "90px",
+                          }}
+                        >
+                          {seciliMi ? "✓ Seçildi" : "+ Seç"}
+                        </button>
+
+                        <span>{yemek}</span>
+                      </li>
+                    );
+                  }
+                )}
+              </ul>
             </div>
+          ))}
+
+          <div
+            style={{
+              marginTop: "20px",
+              padding: "15px",
+              background: "#f9f9f9",
+              borderRadius: "8px",
+              border: "1px solid #eee",
+            }}
+          >
+            <h4>Seçimleriniz:</h4>
+
+            <pre
+              style={{
+                background: "#fff",
+                padding: "10px",
+                borderRadius: "4px",
+              }}
+            >
+              {JSON.stringify(secimler, null, 2)}
+            </pre>
+
+            <button
+              onClick={siparisiOnayla}
+              style={{
+                marginTop: "10px",
+                background: "#007BFF",
+                color: "#fff",
+                padding: "12px 20px",
+                border: "none",
+                cursor: "pointer",
+                borderRadius: "4px",
+                fontSize: "16px",
+                width: "100%",
+                fontWeight: "bold",
+              }}
+            >
+              Siparişi Onayla ve Gönder
+            </button>
           </div>
-        ))}
-      </div>
-
-      {/* Gönderme Butonu ve Durum */}
-      <div style={{ marginTop: "30px", padding: "20px", border: "1px solid #ccc", borderRadius: "8px", background: "#f9f9f9", textAlign: "center" }}>
-        <button
-          type="button"
-          onClick={sendOrderToWhatsApp}
-          style={{ padding: "12px 24px", fontSize: "16px", cursor: "pointer", backgroundColor: "#25D366", color: "white", border: "none", borderRadius: "5px", fontWeight: "bold" }}
-        >
-          Seçimleri WhatsApp ile Gönder
-        </button>
-        <p style={{ marginTop: "15px" }}><strong>Durum:</strong> {status}</p>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

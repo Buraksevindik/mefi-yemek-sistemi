@@ -105,7 +105,7 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                             "Menü görseli geçici dizine indirildi:",
                             gorselYolu
                         );
-
+                        console.log("Gemini çağrısı başlıyor...");
                         // 3. Gemini ile işle
                         const model = genAI.getGenerativeModel({
                             model: "gemini-3.5-flash",
@@ -116,11 +116,21 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                             .toString("base64");
 
                         const prompt = `
-Bu bir yemek menüsü görseli.
+Bu bir yemek menüsü görseli. Pazartesi'den Cumartesi'ye kadar olan yemekleri analiz et ve SADECE aşağıdaki JSON formatında temiz bir çıktı ver, Markdown veya başka bir açıklama metni ekleme:
 
-1. Pazartesi-Cumartesi arası yemekleri listele.
-2. Meyve ve Tatlıları "SORULACAK" yap.
-3. Sadece temiz JSON ver.
+{
+  "Pazartesi": {
+    "Corbalar": ["Çorba adı"],
+    "AnaYemekler": ["Ana yemek 1", "Ana yemek 2"],
+    "YanUrunler": ["Pilav/Makarna adı"],
+    "Ekstralar": ["Salata / Cacık / Yoğurt vb.", "Tatlı / Meyve: SORULACAK"]
+  }
+  // Salı, Çarşamba, Perşembe, Cuma, Cumartesi için de aynı yapıyı devam ettir
+}
+
+Kurallar:
+1. Çorba, ana yemek ve yan ürünleri menüden aynen al.
+2. "Ekstralar" alanına menüdeki diğer yan ürünleri ekle ve tatlı/meyve seçeneklerinin yanına mutlaka "SORULACAK" ibaresini yaz.
 `;
 
                         let result;
@@ -139,6 +149,7 @@ Bu bir yemek menüsü görseli.
                                             },
                                         },
                                     ]);
+                                    console.log("Gemini çağrısı tamamlandı.");
                                 break;
                             } catch (apiError) {
                                 deneme++;
@@ -161,13 +172,18 @@ Bu bir yemek menüsü görseli.
                             .text()
                             .replace(/```json|```/g, "")
                             .trim();
-
+                        
+                        console.log("GEMINI ÇIKTISI:");
+                        console.log(temizJson);
                         const menuVerisi = JSON.parse(temizJson);
 
-                        await db
-                            .collection("menuler")
-                            .doc("aktif_menu")
-                            .set(menuVerisi);
+await db
+    .collection("menuler")
+    .doc("aktif_menu")
+    .set({
+        ...menuVerisi,
+        updatedAt: new Date().toISOString(),
+    });
 
                         console.log(
                             "Menü başarıyla okundu ve Firestore'a kaydedildi!"
