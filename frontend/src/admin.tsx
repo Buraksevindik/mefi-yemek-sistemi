@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { collection, getDocs } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 import { db } from "./services/firebase";
 
 function Admin() {
@@ -7,9 +12,16 @@ function Admin() {
   const [mesaj, setMesaj] = useState("");
   useEffect(() => {
     const fetchSiparisler = async () => {
-      const snapshot = await getDocs(
-        collection(db, "siparisler")
-      );
+const bugununTarihi = new Date()
+  .toISOString()
+  .split("T")[0];
+
+const q = query(
+  collection(db, "siparisler"),
+  where("tarih", "==", bugununTarihi)
+);
+
+const snapshot = await getDocs(q);
 
       const veriler = snapshot.docs.map((doc) => ({
         id: doc.id,

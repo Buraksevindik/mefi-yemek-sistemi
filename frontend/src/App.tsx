@@ -102,10 +102,12 @@ if (
     try {
       const siparislerRef = collection(db, "siparisler");
 
+const bugununTarihi = new Date().toISOString().split("T")[0];
+
 const q = query(
   siparislerRef,
   where("uid", "==", user.uid),
-  where("gun", "==", bugun)
+  where("tarih", "==", bugununTarihi)
 );
 
 const mevcutSiparis = await getDocs(q);
@@ -114,14 +116,14 @@ if (!mevcutSiparis.empty) {
   alert("Bugün zaten sipariş verdiniz.");
   return;
 }
-      await addDoc(collection(db, "siparisler"), {
-isim: user.displayName,
-email: user.email,
-uid: user.uid,
-        secimler: gecerliSecimler,
-        gun: bugun,
-        tarih: new Date().toISOString(),
-      });
+
+await addDoc(collection(db, "siparisler"), {
+  isim: user.displayName,
+  email: user.email,
+  uid: user.uid,
+  secimler: gecerliSecimler,
+  tarih: bugununTarihi,
+});
 
       setGonderildi(true);
     } catch (error) {
