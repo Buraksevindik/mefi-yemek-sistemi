@@ -7,7 +7,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./services/firebase";
 
-function Admin() {
+function Admin({ geriDon }: any) {
   const [siparisler, setSiparisler] = useState<any[]>([]);
   const [mesaj, setMesaj] = useState("");
   useEffect(() => {
@@ -56,6 +56,11 @@ const mesajOlustur = () => {
 
   return (
     <div style={{ padding: "20px" }}>
+
+<button onClick={geriDon}>
+  ← Sipariş Ekranına Dön
+</button>
+
       <h1>Admin Paneli</h1>
 
       <h2>Toplam Sipariş Özeti</h2>

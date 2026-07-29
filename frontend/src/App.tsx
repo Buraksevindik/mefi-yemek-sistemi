@@ -22,7 +22,8 @@ function App() {
   const [secimler, setSecimler] = useState<{ [kategori: string]: string }>({});
   const [gonderildi, setGonderildi] = useState(false);
   const [user, setUser] = useState<any>(null);
-  const adminModu = true;
+  const [adminSayfasi, setAdminSayfasi] = useState(false);
+
 
 
   useEffect(() => {
@@ -81,6 +82,7 @@ if (
 
   const bugun = gunler[new Date().getDay()];
   const bugununMenusu = menu?.[bugun];
+  const adminMi =user?.email === "sevindikburak2004@gmail.com";
 
   const yemekSec = (kategori: string, yemek: string) => {
     setSecimler((prev) => ({
@@ -131,9 +133,15 @@ await addDoc(collection(db, "siparisler"), {
       alert("Bir hata oluştu.");
     }
   };
-  if (adminModu) {
-  return <Admin />;
+
+if (adminSayfasi) {
+  return (
+    <Admin
+      geriDon={() => setAdminSayfasi(false)}
+    />
+  );
 }
+
 if (!user) {
   return (
     <div style={{ padding: "20px" }}>
@@ -165,6 +173,17 @@ if (!user) {
     >
       <h1>MEFİ Menü & Sipariş</h1>
 
+      {adminMi && (
+  <button
+    onClick={() => setAdminSayfasi(true)}
+    style={{
+      marginBottom: "15px",
+    }}
+  >
+    Admin Paneli
+  </button>
+)}
+
 <button
   onClick={async () => {
     await signOut(auth);
@@ -182,7 +201,9 @@ if (!user) {
         <div>
           <h3>{bugun} Menüsü (Her kategoriden en fazla 1 tane):</h3>
 
-          {Object.keys(bugununMenusu).map((kategori) => (
+          {Object.keys(bugununMenusu)
+  .filter((kategori) => Array.isArray(bugununMenusu[kategori]))
+  .map((kategori) => (
             <div
               key={kategori}
               style={{

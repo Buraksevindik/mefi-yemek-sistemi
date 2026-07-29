@@ -14,6 +14,38 @@ const db = getFirestore();
 
 const genAI = new GoogleGenerativeAI(process.env.API_KEY);
 
+exports.testMesajGonder = onRequest(async (req, res) => {
+  try {
+    const response = await axios.post(
+      "https://graph.facebook.com/v25.0/1125395517333883/messages",
+      {
+        messaging_product: "whatsapp",
+        to: "905539318881",
+        type: "text",
+        text: {
+          body: "Merhaba Burak, WhatsApp API testi başarılı 🚀",
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    console.log(response.data);
+
+    res.status(200).send("Mesaj gönderildi");
+  } catch (error) {
+    console.error(
+      error.response?.data || error.message
+    );
+
+    res.status(500).send(error.response?.data || error.message);
+  }
+});
+
 // WhatsApp Webhook Endpoint
 exports.whatsappWebhook = onRequest(async (req, res) => {
     console.log(
@@ -123,14 +155,25 @@ Bu bir yemek menüsü görseli. Pazartesi'den Cumartesi'ye kadar olan yemekleri 
     "Corbalar": ["Çorba adı"],
     "AnaYemekler": ["Ana yemek 1", "Ana yemek 2"],
     "YanUrunler": ["Pilav/Makarna adı"],
-    "Ekstralar": ["Salata / Cacık / Yoğurt vb.", "Tatlı / Meyve: SORULACAK"]
+"Ekstralar": [
+  "Salata",
+  "Cacık",
+  "Yoğurt",
+  "Turşu"
+]
   }
   // Salı, Çarşamba, Perşembe, Cuma, Cumartesi için de aynı yapıyı devam ettir
 }
 
 Kurallar:
-1. Çorba, ana yemek ve yan ürünleri menüden aynen al.
-2. "Ekstralar" alanına menüdeki diğer yan ürünleri ekle ve tatlı/meyve seçeneklerinin yanına mutlaka "SORULACAK" ibaresini yaz.
+
+1. Çorbaları ayrı ayrı listele.
+2. Ana yemekleri ayrı ayrı listele.
+3. Yan ürünleri ayrı ayrı listele.
+4. Salata, cacık, yoğurt, turşu gibi ürünleri Ekstralar dizisinde TEK TEK eleman olarak yaz.
+5. Tatlı ve meyve alanlarını ayrı alanlar olarak oluştur.
+6. Tatlı ve meyve bilgisi menüde yoksa boş string bırak.
+7. JSON dışında hiçbir şey döndürme.
 `;
 
                         let result;
@@ -176,6 +219,7 @@ Kurallar:
                         console.log("GEMINI ÇIKTISI:");
                         console.log(temizJson);
                         const menuVerisi = JSON.parse(temizJson);
+                        
 
 await db
     .collection("menuler")
@@ -189,11 +233,108 @@ await db
                             "Menü başarıyla okundu ve Firestore'a kaydedildi!"
                         );
                     } else if (message.type === "text") {
-                        console.log(
-                            "Metin mesajı alındı:",
-                            message.text.body
-                        );
-                    }
+    const gelenMesaj = message.text.body;
+
+    console.log("Metin mesajı alındı:", gelenMesaj);
+
+    const model = genAI.getGenerativeModel({
+        model: "gemini-3.5-flash",
+    });
+
+let sonuc;
+let deneme = 0;
+const maxDeneme = 3;
+
+while (deneme < maxDeneme) {
+  try {
+    sonuc = await model.generateContent(`
+Bu mesaj bir catering firmasından geliyor.
+
+Mesaj:
+"${gelenMesaj}"
+
+Mesajın içindeki tatlı ve meyve bilgisini bul.
+
+SADECE aşağıdaki JSON'u döndür:
+
+{
+  "tatli": "...",
+  "meyve": "..."
+}
+`);
+
+    break;
+  } catch (err) {
+    deneme++;
+
+    if (deneme >= maxDeneme) {
+      throw err;
+    }
+
+    console.log(
+      `Gemini yoğun, tekrar deneniyor... (${deneme}/${maxDeneme})`
+    );
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, 2000)
+    );
+  }
+}
+
+    const temizJson = sonuc.response
+        .text()
+        .replace(/```json|```/g, "")
+        .trim();
+
+    console.log("Gemini çıktısı:");
+    console.log(temizJson);
+    const veri = JSON.parse(temizJson);
+
+const gunler = [
+    "Pazar",
+    "Pazartesi",
+    "Sali",
+    "Carsamba",
+    "Persembe",
+    "Cuma",
+    "Cumartesi",
+];
+
+const bugun = gunler[new Date().getDay()];
+
+const docRef = db
+  .collection("menuler")
+  .doc("aktif_menu");
+
+const snap = await docRef.get();
+
+const menu = snap.data();
+
+const ekstralar =
+  menu?.[bugun]?.Ekstralar || [];
+
+// eski tatlı ve meyveyi çıkar
+const temizEkstralar = ekstralar.filter(
+  (item) =>
+    item !== menu?.[bugun]?.tatli &&
+    item !== menu?.[bugun]?.meyve
+);
+
+// yeni tatlı ve meyveyi ekle
+if (veri.tatli) {
+  temizEkstralar.push(veri.tatli);
+}
+
+if (veri.meyve) {
+  temizEkstralar.push(veri.meyve);
+}
+
+await docRef.update({
+  [`${bugun}.Ekstralar`]: temizEkstralar,
+});
+
+console.log(`${bugun} günü için tatlı ve meyve kaydedildi.`);
+}
                 } else {
                     console.log("messages alanı yok.");
                 }
