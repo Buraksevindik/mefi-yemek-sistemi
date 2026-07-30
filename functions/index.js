@@ -1,8 +1,9 @@
 // Firebase ve diğer kütüphaneler
 const { onRequest } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { initializeApp } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const path = require("path");
 const os = require("os");
 const fs = require("fs");
@@ -35,18 +36,16 @@ exports.testMesajGonder = onRequest(async (req, res) => {
     );
 
     console.log(response.data);
-
     res.status(200).send("Mesaj gönderildi");
   } catch (error) {
-    console.error(
-      error.response?.data || error.message
-    );
-
+    console.error(error.response?.data || error.message);
     res.status(500).send(error.response?.data || error.message);
   }
 });
 
-// WhatsApp Webhook Endpoint
+// ==========================================
+// 1. WHATSAPP WEBHOOK (Görselleri Anında, Metinleri Havuzda İşleyen Versiyon)
+// ==========================================
 exports.whatsappWebhook = onRequest(async (req, res) => {
     console.log(
         "-> WEBHOOK'A İSTEK GELDİ! Method:",
@@ -60,7 +59,6 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
         const mode = req.query["hub.mode"];
         const token = req.query["hub.verify_token"];
         const challenge = req.query["hub.challenge"];
-
         const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
         if (mode && token === VERIFY_TOKEN) {
@@ -74,7 +72,6 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
     // B) WhatsApp'tan Gelen Mesaj / Medya Bildirimi (POST isteği)
     if (req.method === "POST") {
         let gorselYolu = null;
-
         try {
             const body = req.body;
 
@@ -86,92 +83,60 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                 const entry = body.entry?.[0];
                 const changes = entry?.changes?.[0];
                 const value = changes?.value;
-
                 const message = value?.messages?.[0];
+
                 if (!message) {
-  return res.sendStatus(200);
-}
-// Catering firmasının WhatsApp Business numarası (Örnek numara)
-const CATERING_NUMARASI = "905539318881"; // Buraya gerçek numarayı yazmalısın
+                    return res.sendStatus(200);
+                }
 
-// Webhook içerisinde mesaj kontrolü yapılırken:
-const gonderenNumara = message.from;
+                const CATERING_NUMARASI = "905539318881"; 
+                const gonderenNumara = message.from;
 
-if (gonderenNumara !== CATERING_NUMARASI) {
-    console.log("Yetkisiz numaradan mesaj geldi, yoksayılıyor:", gonderenNumara);
-    return res.sendStatus(200);
-}
+                if (gonderenNumara !== CATERING_NUMARASI) {
+                    console.log("Yetkisiz numaradan mesaj geldi, yoksayılıyor:", gonderenNumara);
+                    return res.sendStatus(200);
+                }
+
                 const messageId = message.id;
 
-const mesajVarMi = await db
-  .collection("islenen_mesajlar")
-  .doc(messageId)
-  .get();
+                // Aynı mesajın mükerrer (duplicate) gelip gelmediğini kontrol et
+                const mesajVarMi = await db
+                  .collection("islenen_mesajlar")
+                  .doc(messageId)
+                  .get();
 
-if (mesajVarMi.exists) {
-  console.log("Bu mesaj daha önce işlendi:", messageId);
-  return res.sendStatus(200);
-}
+                if (mesajVarMi.exists) {
+                    console.log("Bu mesaj daha önce işlendi:", messageId);
+                    return res.sendStatus(200);
+                }
 
-                if (message) {
-                    console.log("MESSAGE TYPE:", message.type);
-                    console.log("FROM:", message.from);
+                let mesajTuru = message.type; // "image" veya "text"
 
-                    // Eğer gelen mesaj görsel ise
-                    if (message.type === "image") {
-                        const mediaId = message.image.id;
+                // --- 1. SENARYO: GÖRSEL GELDİYSE ANINDA İŞLE ---
+                if (mesajTuru === "image") {
+                    const mediaId = message.image.id;
+                    console.log("Catering şirketinden ana menü görseli alındı, anında işleniyor! Medya ID:", mediaId);
 
-                        console.log(
-                            "Catering şirketinden menü fotoğrafı alındı! Medya ID:",
-                            mediaId
-                        );
+                    const mediaResponse = await axios.get(
+                        `https://graph.facebook.com/v25.0/${mediaId}`,
+                        {
+                            headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` },
+                        }
+                    );
 
-                        // 1. Meta API'den medya indirme linkini al
-                        const mediaResponse = await axios.get(
-                            `https://graph.facebook.com/v25.0/${mediaId}`,
-                            {
-                                headers: {
-                                    Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-                                },
-                            }
-                        );
+                    const mediaUrl = mediaResponse.data.url;
+                    const downloadResponse = await axios.get(mediaUrl, {
+                        headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` },
+                        responseType: "arraybuffer",
+                    });
 
-                        const mediaUrl = mediaResponse.data.url;
+                    gorselYolu = path.join(os.tmpdir(), `instant_menu_${Date.now()}.jpeg`);
+                    fs.writeFileSync(gorselYolu, downloadResponse.data);
 
-                        // 2. Görseli indirip geçici dizine kaydet
-                        const downloadResponse = await axios.get(mediaUrl, {
-                            headers: {
-                                Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-                            },
-                            responseType: "arraybuffer",
-                        });
+                    const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
+                    const imageData = fs.readFileSync(gorselYolu).toString("base64");
 
-                        gorselYolu = path.join(
-                            os.tmpdir(),
-                            `menu_${Date.now()}.jpeg`
-                        );
-
-                        fs.writeFileSync(
-                            gorselYolu,
-                            downloadResponse.data
-                        );
-
-                        console.log(
-                            "Menü görseli geçici dizine indirildi:",
-                            gorselYolu
-                        );
-                        console.log("Gemini çağrısı başlıyor...");
-
-                        // 3. Gemini ile işle
-                        const model = genAI.getGenerativeModel({
-                            model: "gemini-3.5-flash",
-                        });
-
-                        const imageData = fs
-                            .readFileSync(gorselYolu)
-                            .toString("base64");
-
-                        const prompt = `
+                    const prompt = `
 Bu bir yemek menüsü görseli. Pazartesi'den Cumartesi'ye kadar olan yemekleri analiz et ve SADECE aşağıdaki JSON formatında temiz bir çıktı ver, Markdown veya başka bir açıklama metni ekleme:
 
 {
@@ -186,17 +151,6 @@ Bu bir yemek menüsü görseli. Pazartesi'den Cumartesi'ye kadar olan yemekleri 
       "Turşu"
     ]
   }
-  // Salı, Çarşamba, Perşembe, Cuma, Cumartesi için de aynı yapıyı devam ettir(1. Gün isimleri TAM OLARAK şu şekilde olmalı:
-
-"Pazartesi"
-"Sali"
-"Carsamba"
-"Persembe"
-"Cuma"
-"Cumartesi"
-
-2. Baş harf büyük, diğer harfler küçük olacak.
-3. Türkçe karakter kullanma.)
 }
 
 Kurallar:
@@ -204,226 +158,182 @@ Kurallar:
 2. Ana yemekleri ayrı ayrı listele.
 3. Yan ürünleri ayrı ayrı listele.
 4. Salata, cacık, yoğurt, turşu gibi ürünleri Ekstralar dizisinde TEK TEK eleman olarak yaz.
-5. JSON dışında hiçbir şey döndürme.
-Eğer menüde "Tatlı" veya "Meyve" başlığı varsa bunları Ekstralar listesine ekleme.
-Sadece gerçek ürün isimlerini ekle.
+5. Gün isimleri TAM OLARAK şu şekilde olmalı: "Pazartesi", "Sali", "Carsamba", "Persembe", "Cuma", "Cumartesi".
+6. JSON dışında hiçbir şey döndürme.
 `;
 
-                        let result;
-                        let deneme = 0;
-                        const maxDeneme = 3;
+                    const result = await model.generateContent([
+                        prompt,
+                        {
+                            inlineData: {
+                                data: imageData,
+                                mimeType: "image/jpeg",
+                            },
+                        },
+                    ]);
 
-while (deneme < maxDeneme) {
-    try {
-        result = await model.generateContent([
-            prompt,
-            {
-                inlineData: {
-                    data: imageData,
-                    mimeType: "image/jpeg",
-                },
-            },
-        ]);
+                    const temizJson = result.response.text().replace(/```json|```/g, "").trim();
+                    const menuVerisi = JSON.parse(temizJson);
 
-        console.log("Gemini çağrısı tamamlandı.");
-        break;
+                    // Doğrudan aktif menü olarak kaydet
+ await db.collection("menuler")
+  .doc("aktif_menu")
+  .set(
+    {
+      ...menuVerisi,
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true }
+  );
 
-    } catch (apiError) {
+                    console.log("Görsel başarıyla işlendi ve aktif menü güncellendi!");
 
-        if (apiError.status === 429) {
-            console.log("Gemini kotası dolu.");
+                } 
+                // --- 2. SENARYO: METİN MESAJI GELDİYSE HAVUZA AT ---
+                else if (mesajTuru === "text") {
+                    const metinIcerigi = message.text.body;
+                    console.log("Metin mesajı alındı, havuza atılıyor:", metinIcerigi);
 
-            return res.sendStatus(200);
-        }
-
-        deneme++;
-
-        if (deneme >= maxDeneme) {
-            throw apiError;
-        }
-
-        console.log(
-            `Yoğunluk nedeniyle tekrar deneniyor... (${deneme}/${maxDeneme})`
-        );
-
-        await new Promise(resolve =>
-            setTimeout(resolve, 2000)
-        );
-    }
-}
-
-                        const temizJson = result.response
-                            .text()
-                            .replace(/```json|```/g, "")
-                            .trim();
-                        
-                        console.log("GEMINI ÇIKTISI:");
-                        console.log(temizJson);
-                        const menuVerisi = JSON.parse(temizJson);
-                        
-                        await db
-                            .collection("menuler")
-                            .doc("aktif_menu")
-                            .set({
-                                ...menuVerisi,
-                                updatedAt: new Date().toISOString(),
-                            });
-await db
-  .collection("islenen_mesajlar")
-  .doc(messageId)
-  .set({
-    createdAt: new Date().toISOString(),
-  });
-                        console.log(
-                            "Menü başarıyla okundu ve Firestore'a kaydedildi!"
-                        );
-                        
-                    } else if (message.type === "text") {
-                        const gelenMesaj = message.text.body;
-
-                        console.log("Metin mesajı alındı:", gelenMesaj);
-
-                        const model = genAI.getGenerativeModel({
-                            model: "gemini-3.5-flash",
-                        });
-
-                        let sonuc;
-                        let deneme = 0;
-                        const maxDeneme = 3;
-
-                        while (deneme < maxDeneme) {
-                          try {
-                            sonuc = await model.generateContent(`
-Bu mesaj bir catering firmasından geliyor.
-
-Mesaj:
-"${gelenMesaj}"
-
-Mesajın içindeki tatlı ve meyve bilgisini bul.
-
-SADECE aşağıdaki JSON'u döndür:
-
-{
-  "tatli": "...",
-  "meyve": "..."
-}
-`);
-                            break;
-                          } catch (err) {
-
-    if (err.status === 429) {
-        console.log("Gemini kotası dolu.");
-        return res.sendStatus(200);
-    }
-
-    deneme++;
-
-    if (deneme >= maxDeneme) {
-        throw err;
-    }
-
-    console.log(
-      `Gemini yoğun, tekrar deneniyor... (${deneme}/${maxDeneme})`
-    );
-
-    await new Promise(resolve =>
-      setTimeout(resolve, 2000)
-    );
-}
-                        }
-
-                        const temizJson = sonuc.response
-                            .text()
-                            .replace(/```json|```/g, "")
-                            .trim();
-
-                        console.log("Gemini çıktısı:");
-                        console.log(temizJson);
-                        const veri = JSON.parse(temizJson);
-
-                        // KRİTİK DÜZELTME: Türkiye saat dilimine (Europe/Istanbul) göre gün tespiti
-// Türkiye saat dilimine göre küçük harfli ve İngilizce karakterli gün tespiti
-const gunlerIngilizce = [
-  "Pazar",
-  "Pazartesi",
-  "Sali",
-  "Carsamba",
-  "Persembe",
-  "Cuma",
-  "Cumartesi",
-];
-const bugunIndex = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Istanbul" })).getDay();
-const bugun = gunlerIngilizce[bugunIndex];
-
-                        const docRef = db
-                          .collection("menuler")
-                          .doc("aktif_menu");
-
-                        const snap = await docRef.get();
-                        const menu = snap.data();
-
-                        const ekstralar = menu?.[bugun]?.Ekstralar || [];
-                        console.log("EKSTRALAR ÖNCESİ:");
-console.log(JSON.stringify(ekstralar, null, 2));
-
-                        // eski tatlı ve meyveyi çıkar
-                        const temizEkstralar = ekstralar.filter(item => {
-  const i = item.trim().toLowerCase();
-
-  return i !== "tatlı" &&
-         i !== "tatli" &&
-         i !== "meyve";
+  await db.collection("mesaj_havuzu").doc(messageId).set({
+    messageId: messageId,
+    type: "text",
+    content: metinIcerigi,
+    createdAt: new Date().toISOString()
 });
-console.log("EKSTRALAR SONRASI:");
-console.log(JSON.stringify(temizEkstralar, null, 2));
-
-                        // yeni tatlı ve meyveyi ekle
-                        if (veri.tatli) {
-                          temizEkstralar.push(veri.tatli);
-                        }
-
-                        if (veri.meyve) {
-                          temizEkstralar.push(veri.meyve);
-                        }
-
-                        await docRef.update({
-                          [`${bugun}.Ekstralar`]: temizEkstralar,
-                        });
-await db
-  .collection("islenen_mesajlar")
-  .doc(messageId)
-  .set({
-    createdAt: new Date().toISOString(),
-  });
-
-                        console.log(`${bugun} günü için tatlı ve meyve kaydedildi.`);
-                    }
                 } else {
-                    console.log("messages alanı yok.");
+                    console.log("Desteklenmeyen mesaj türü yoksayılıyor:", mesajTuru);
+                    return res.sendStatus(200);
                 }
+
+                // Mesajın işlendiğini kaydederek mükerrerliği önle
+                await db.collection("islenen_mesajlar").doc(messageId).set({
+                    createdAt: new Date().toISOString(),
+                });
+
             } else {
-                console.log(
-                    "whatsapp_business_account objesi değil:",
-                    body.object
-                );
+                console.log("whatsapp_business_account objesi değil:", body.object);
             }
 
             return res.sendStatus(200);
         } catch (err) {
-            console.error("Webhook işleme hatası:", err);
+            console.error("Webhook hata:", err);
             return res.sendStatus(500);
         } finally {
-            // KRİTİK DÜZELTME: Hata olsun veya olmasın, geçici dizine indirilen görsel dosyasını mutlaka sil (Disk şişmesini önle)
             if (gorselYolu && fs.existsSync(gorselYolu)) {
                 try {
                     fs.unlinkSync(gorselYolu);
-                    console.log("Geçici görsel dosyası başarıyla temizlendi:", gorselYolu);
                 } catch (cleanupErr) {
-                    console.error("Geçici dosya silinirken hata oluştu:", cleanupErr);
+                    console.error("Geçici dosya temizleme hatası:", cleanupErr);
                 }
             }
         }
     }
 
     return res.sendStatus(404);
+});
+
+
+// ==========================================
+// 2. ZAMANLANMIŞ METİN NOTU İŞLEME FONKSİYONU (Cloud Scheduler)
+// ==========================================
+exports.gunlukMenuTetikleyicisi = onSchedule({
+  schedule: "41 17 * * *", // Belirlediğin saat
+  timeZone: "Europe/Istanbul"
+}, async (event) => {
+    console.log("Havuzdaki metin notlarını toplu işleme görevi başladı...");
+
+    try {
+        // 1. Havuzdaki henüz işlenmemiş metin mesajlarını çek
+const snapshot = await db.collection("mesaj_havuzu").get();
+
+        if (snapshot.empty) {
+            console.log("Havuzda işlenecek yeni metin mesajı yok.");
+            return;
+        }
+
+        let metinNotlari = [];
+        snapshot.docs.forEach(doc => {
+            metinNotlari.push(doc.data().content);
+        });
+
+        // 2. Firestore'daki mevcut aktif menüyü al
+        let menuVerisi = {};
+        const aktifDoc = await db.collection("menuler").doc("aktif_menu").get();
+        if (aktifDoc.exists) {
+            menuVerisi = aktifDoc.data();
+        } else {
+            console.log("Aktif menü bulunamadı, metinler uygulanamıyor.");
+            return;
+        }
+
+        // 3. Metin notlarını Gemini ile mevcut menüye entegre et
+        console.log("Toplu metin notları işleniyor:", metinNotlari);
+
+        const bugunIngilizce = ["Pazar", "Pazartesi", "Sali", "Carsamba", "Persembe", "Cuma", "Cumartesi"];
+        const bugunIndex = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Istanbul" })).getDay();
+        const bugun = bugunIngilizce[bugunIndex];
+
+        const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
+        console.log(
+  "Toplam işlenecek not:",
+  snapshot.size
+);
+
+console.log(
+  JSON.stringify(metinNotlari, null, 2)
+);
+        const topluPrompt = `
+Mevcut Menü Verisi:
+${JSON.stringify(menuVerisi)}
+
+Bugün firmadan gelen metin mesajları/notlar şunlar:
+${JSON.stringify(metinNotlari)}
+
+Bugün günlerden: ${bugun}
+
+Kurallar:
+
+1. Sadece ${bugun} gününü güncelle.
+2. Diğer günlere dokunma.
+3. Aynı konu hakkında birden fazla not varsa en son gelen bilgi geçerlidir.
+4. İptal edilen ürünleri kaldır.
+5. Sadece güncellenmiş SON MENÜYÜ JSON olarak döndür.
+6. Açıklama veya markdown yazma.
+`;
+
+        const textResult = await model.generateContent(topluPrompt);
+        const temizGuncelJson = textResult.response.text().replace(/```json|```/g, "").trim();
+        menuVerisi = JSON.parse(temizGuncelJson);
+
+        if (!menuVerisi[bugun]) {
+  throw new Error(
+    `${bugun} verisi Gemini çıktısında bulunamadı`
+  );
+}
+
+        // 4. Güncellenmiş menüyü tekrar kaydet
+await db.collection("menuler")
+  .doc("aktif_menu")
+  .set(
+    {
+      [bugun]: menuVerisi[bugun],
+      updatedAt: new Date().toISOString()
+    },
+    { merge: true }
+  );
+
+        // 5. İşlenen metin notlarını havuzdan sil
+const batch = db.batch();
+
+snapshot.docs.forEach(doc => {
+    batch.delete(doc.ref);
+});
+
+await batch.commit();
+
+        console.log("Metin notları başarıyla menüye işlendi ve veritabanı güncellendi!");
+
+    } catch (error) {
+        console.error("Metin toplu işleme hatası:", error);
+    }
 });
