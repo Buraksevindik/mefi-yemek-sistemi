@@ -3,7 +3,7 @@ const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { initializeApp } = require("firebase-admin/app");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getFirestore } = require("firebase-admin/firestore");
 const path = require("path");
 const os = require("os");
 const fs = require("fs");
@@ -21,22 +21,37 @@ exports.testMesajGonder = onRequest(async (req, res) => {
       "https://graph.facebook.com/v25.0/1125395517333883/messages",
       {
         messaging_product: "whatsapp",
-        to: "905539318881",
-        type: "text",
-        text: {
-          body: "Merhaba Burak, WhatsApp API testi başarılı 🚀",
-        },
+        to: "905539318881", // Uluslararası standart format
+        type: "template",
+        template: {
+          name: "bilgi_talebi",
+          language: {
+            code: "tr"
+          },
+          components: [
+            {
+              type: "body",
+              parameters: [
+                {
+                  type: "text",
+                  text: "Haftalık menü"
+                }
+              ]
+            }
+          ]
+        }
       },
       {
         headers: {
           Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json",
-        },
+          "Content-Type": "application/json"
+        }
       }
     );
 
     console.log(response.data);
-    res.status(200).send("Mesaj gönderildi");
+    res.status(200).send(response.data);
+
   } catch (error) {
     console.error(error.response?.data || error.message);
     res.status(500).send(error.response?.data || error.message);
@@ -99,15 +114,15 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
 
                 const messageId = message.id;
 
-                // Aynı mesajın mükerrer (duplicate) gelip gelmediğini kontrol et
+                // --- 🛡️ MÜKERRER (DUPLICATE) İSTEK KONTROLÜ ---
                 const mesajVarMi = await db
                   .collection("islenen_mesajlar")
                   .doc(messageId)
                   .get();
 
                 if (mesajVarMi.exists) {
-                    console.log("Bu mesaj daha önce işlendi:", messageId);
-                    return res.sendStatus(200);
+                    console.log("Mükerrer istek engellendi, bu mesaj daha önce işlendi:", messageId);
+                    return res.sendStatus(200); // Meta'ya 200 dönüyoruz ki tekrar darlamasın
                 }
 
                 let mesajTuru = message.type; // "image" veya "text"
@@ -176,15 +191,15 @@ Kurallar:
                     const menuVerisi = JSON.parse(temizJson);
 
                     // Doğrudan aktif menü olarak kaydet
- await db.collection("menuler")
-  .doc("aktif_menu")
-  .set(
-    {
-      ...menuVerisi,
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true }
-  );
+                    await db.collection("menuler")
+                      .doc("aktif_menu")
+                      .set(
+                        {
+                          ...menuVerisi,
+                          updatedAt: new Date().toISOString(),
+                        },
+                        { merge: true }
+                      );
 
                     console.log("Görsel başarıyla işlendi ve aktif menü güncellendi!");
 
@@ -194,18 +209,22 @@ Kurallar:
                     const metinIcerigi = message.text.body;
                     console.log("Metin mesajı alındı, havuza atılıyor:", metinIcerigi);
 
-  await db.collection("mesaj_havuzu").doc(messageId).set({
-    messageId: messageId,
-    type: "text",
-    content: metinIcerigi,
-    createdAt: new Date().toISOString()
-});
+                    await db.collection("mesaj_havuzu").doc(messageId).set({
+                      messageId: messageId,
+                      type: "text",
+                      content: metinIcerigi,
+                      createdAt: new Date()
+                    });
                 } else {
                     console.log("Desteklenmeyen mesaj türü yoksayılıyor:", mesajTuru);
+                    // Desteklenmeyen türlerde bile mesajı işlendi olarak kaydedelim ki döngüye girmesin
+                    await db.collection("islenen_mesajlar").doc(messageId).set({
+                        createdAt: new Date().toISOString(),
+                    });
                     return res.sendStatus(200);
                 }
 
-                // Mesajın işlendiğini kaydederek mükerrerliği önle
+                // Mesajın başarıyla işlendiğini kaydederek mükerrerliği kalıcı olarak engelle
                 await db.collection("islenen_mesajlar").doc(messageId).set({
                     createdAt: new Date().toISOString(),
                 });
@@ -237,14 +256,13 @@ Kurallar:
 // 2. ZAMANLANMIŞ METİN NOTU İŞLEME FONKSİYONU (Cloud Scheduler)
 // ==========================================
 exports.gunlukMenuTetikleyicisi = onSchedule({
-  schedule: "41 17 * * *", // Belirlediğin saat
+  schedule: "22 09 * * 1-6",
   timeZone: "Europe/Istanbul"
 }, async (event) => {
     console.log("Havuzdaki metin notlarını toplu işleme görevi başladı...");
 
     try {
-        // 1. Havuzdaki henüz işlenmemiş metin mesajlarını çek
-const snapshot = await db.collection("mesaj_havuzu").get();
+        const snapshot = await db.collection("mesaj_havuzu").get();
 
         if (snapshot.empty) {
             console.log("Havuzda işlenecek yeni metin mesajı yok.");
@@ -256,7 +274,6 @@ const snapshot = await db.collection("mesaj_havuzu").get();
             metinNotlari.push(doc.data().content);
         });
 
-        // 2. Firestore'daki mevcut aktif menüyü al
         let menuVerisi = {};
         const aktifDoc = await db.collection("menuler").doc("aktif_menu").get();
         if (aktifDoc.exists) {
@@ -266,7 +283,6 @@ const snapshot = await db.collection("mesaj_havuzu").get();
             return;
         }
 
-        // 3. Metin notlarını Gemini ile mevcut menüye entegre et
         console.log("Toplu metin notları işleniyor:", metinNotlari);
 
         const bugunIngilizce = ["Pazar", "Pazartesi", "Sali", "Carsamba", "Persembe", "Cuma", "Cumartesi"];
@@ -274,14 +290,9 @@ const snapshot = await db.collection("mesaj_havuzu").get();
         const bugun = bugunIngilizce[bugunIndex];
 
         const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
-        console.log(
-  "Toplam işlenecek not:",
-  snapshot.size
-);
+        console.log("Toplam işlenecek not:", snapshot.size);
+        console.log(JSON.stringify(metinNotlari, null, 2));
 
-console.log(
-  JSON.stringify(metinNotlari, null, 2)
-);
         const topluPrompt = `
 Mevcut Menü Verisi:
 ${JSON.stringify(menuVerisi)}
@@ -292,13 +303,15 @@ ${JSON.stringify(metinNotlari)}
 Bugün günlerden: ${bugun}
 
 Kurallar:
-
-1. Sadece ${bugun} gününü güncelle.
-2. Diğer günlere dokunma.
-3. Aynı konu hakkında birden fazla not varsa en son gelen bilgi geçerlidir.
-4. İptal edilen ürünleri kaldır.
-5. Sadece güncellenmiş SON MENÜYÜ JSON olarak döndür.
-6. Açıklama veya markdown yazma.
+1. ${bugun} gününü güncelle.
+2. Diğer günlere o günler için not gelmediyse dokunma.
+3. Eğer meyve ve tatlı ile ilgili bir not gelmişse önceki menüdeki tatlı ve meyve bilgilerini güncelle(İsmi "Meyve" ve "Tatlı" veya Farklı meyve ve tatlı isimleri).
+4. Aynı konu hakkında birden fazla not varsa en son gelen bilgi geçerlidir.
+5. İptal edilen ürünleri kaldır.
+6. Sadece güncellenmiş SON MENÜYÜ JSON olarak döndür.
+7. Açıklama veya markdown yazma.
+8. Menüyle ilgisi olmayan, anlamsız, eksik, spam veya tek karakterlik mesajları yok say.
+9. Bir mesajın yemek değişikliği, tatlı değişikliği, meyve değişikliği veya menü güncellemesi içerdiğinden emin değilsen o mesajı dikkate alma.
 `;
 
         const textResult = await model.generateContent(topluPrompt);
@@ -306,34 +319,83 @@ Kurallar:
         menuVerisi = JSON.parse(temizGuncelJson);
 
         if (!menuVerisi[bugun]) {
-  throw new Error(
-    `${bugun} verisi Gemini çıktısında bulunamadı`
-  );
-}
+          throw new Error(`${bugun} verisi Gemini çıktısında bulunamadı`);
+        }
 
-        // 4. Güncellenmiş menüyü tekrar kaydet
-await db.collection("menuler")
-  .doc("aktif_menu")
-  .set(
-    {
-      [bugun]: menuVerisi[bugun],
-      updatedAt: new Date().toISOString()
-    },
-    { merge: true }
-  );
+        await db.collection("menuler")
+          .doc("aktif_menu")
+          .set(
+            {
+              [bugun]: menuVerisi[bugun],
+              updatedAt: new Date().toISOString()
+            },
+            { merge: true }
+          );
 
-        // 5. İşlenen metin notlarını havuzdan sil
-const batch = db.batch();
+        // Havuz ve işlenen mesaj kayıtlarını temizle
+        const batch = db.batch();
+        snapshot.docs.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+        await batch.batchCommit ? await batch.commit() : await batch.commit();
 
-snapshot.docs.forEach(doc => {
-    batch.delete(doc.ref);
-});
-
-await batch.commit();
+        const islenenSnapshot = await db.collection("islenen_mesajlar").get();
+        const batch2 = db.batch();
+        islenenSnapshot.docs.forEach(doc => {
+            batch2.delete(doc.ref);
+        });
+        await batch2.commit();
 
         console.log("Metin notları başarıyla menüye işlendi ve veritabanı güncellendi!");
 
     } catch (error) {
         console.error("Metin toplu işleme hatası:", error);
     }
+});
+
+exports.tatliMeyveHatirlatma = onSchedule({
+  schedule: "20 09 * * 1-6",
+  timeZone: "Europe/Istanbul"
+}, async () => {
+  try {
+    await axios.post(
+      "https://graph.facebook.com/v25.0/1125395517333883/messages",
+      {
+        messaging_product: "whatsapp",
+        to: "905539318881",
+        type: "template",
+        template: {
+          name: "bilgi_talebi",
+          language: {
+            code: "tr"
+          },
+          components: [
+            {
+              type: "body",
+              parameters: [
+                {
+                  type: "text",
+                  text: "Bugünkü tatlı ve meyve"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    console.log("Tatlı ve meyve hatırlatma mesajı gönderildi.");
+
+  } catch (error) {
+    console.error(
+      "Tatlı ve meyve hatırlatma hatası:",
+      error.response?.data || error.message
+    );
+  }
 });
