@@ -12,7 +12,7 @@
     deleteDoc,
   } from "firebase/firestore";
   import { db } from "./services/firebase";
-
+import type { User } from "firebase/auth";
   import { auth } from "./services/firebase";
   import {
     GoogleAuthProvider,
@@ -66,29 +66,98 @@
     cursor: "pointer",
   },
 };
-    const [menu, setMenu] = useState<any>(null);
-    const [alternatifMenu, setAlternatifMenu] = useState<any>(null);
+type MenuData = Record<string, Record<string, string[]>>;
+
+const [menu, setMenu] = useState<MenuData | null>(null);
+type AlternatifMenu = {
+  yemekler?: string[];
+  icecekler?: string[];
+};
+
+const [alternatifMenu, setAlternatifMenu] =
+  useState<AlternatifMenu | null>(null);
     const [secimler, setSecimler] = useState<{ [kategori: string]: string }>({});
     const [secimTipi, setSecimTipi] = useState<"gunluk" | "alternatif" | null>(null);
     const [gonderildi, setGonderildi] = useState(false);
-    const [user, setUser] = useState<any>(null);
+    type Siparis = {
+  id: string;
+  isim: string;
+  email: string;
+  uid: string;
+  tarih: string;
+  secimler: string[];
+};
+
+const [mevcutSiparis, setMevcutSiparis] =
+  useState<Siparis | null>(null);
+  const [user, setUser] = useState<User | null>(null);
     const [adminSayfasi, setAdminSayfasi] = useState(false);
     const [authLoading, setAuthLoading] = useState(true);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+useEffect(() => {
+  const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    if (!currentUser) {
+      setUser(null);
       setAuthLoading(false);
-    });
+      return;
+    }
 
-    return () => unsubscribe();
-  }, []);
+    const email = currentUser.email;
+
+    const izinliMi =
+      email?.endsWith("@akdogan.tech") ||
+      email === "sevindikburak2004@gmail.com";
+
+    if (!izinliMi) {
+      await signOut(auth);
+      setUser(null);
+      setAuthLoading(false);
+      return;
+    }
+
+    setUser(currentUser);
+    setAuthLoading(false);
+  });
+
+  return () => unsubscribe();
+}, []);
 
   useEffect(() => {
     
     
     if (!user) return;
 
+    const fetchSiparis = async () => {
+const bugununTarihi = new Date()
+  .toLocaleDateString("sv-SE", {
+    timeZone: "Europe/Istanbul",
+  });
+
+  const q = query(
+    collection(db, "siparisler"),
+    where("uid", "==", user.uid),
+    where("tarih", "==", bugununTarihi)
+  );
+
+  const snapshot = await getDocs(q);
+
+  if (!snapshot.empty) {
+    const data = snapshot.docs[0];
+
+    const siparisData = data.data();
+
+    const siparis: Siparis = {
+      id: data.id,
+      isim: siparisData.isim,
+      email: siparisData.email,
+      uid: siparisData.uid,
+      tarih: siparisData.tarih,
+      secimler: siparisData.secimler ?? [],
+    };
+
+    setMevcutSiparis(siparis);
+  }
+};
   const fetchMenu = async () => {
     try {
       const aktifMenuRef = doc(db, "menuler", "aktif_menu");
@@ -113,10 +182,16 @@
   };
 
     fetchMenu();
+fetchSiparis();
   }, [user]);
 
 
     const siparisiIptalEt = async () => {
+        if (siparisKapali) {
+    alert("Sipariş süresi sona ermiştir.");
+    return;
+  }
+
       const onay = window.confirm(
         "Siparişinizi iptal etmek istediğinize emin misiniz?"
       );
@@ -130,7 +205,7 @@
 
         const q = query(
           collection(db, "siparisler"),
-          where("uid", "==", user.uid),
+          where("uid", "==", user!.uid),
           where("tarih", "==", bugununTarihi)
         );
 
@@ -144,6 +219,7 @@
         await deleteDoc(snapshot.docs[0].ref);
 
         setGonderildi(false);
+        setMevcutSiparis(null);
         setSecimler({});
         setSecimTipi(null);
 
@@ -216,7 +292,7 @@
     user &&
     user.email === "sevindikburak2004@gmail.com";
     
-    const SIPARIS_BITIS_SAATI = 20;
+    const SIPARIS_BITIS_SAATI = 15;
     const SIPARIS_BITIS_DAKIKA = 30;
 
     const simdi = new Date();
@@ -253,7 +329,7 @@
 
         const q = query(
           siparislerRef,
-          where("uid", "==", user.uid),
+          where("uid", "==", user!.uid),
           where("tarih", "==", bugununTarihi)
         );
 
@@ -271,9 +347,9 @@
         }
 
         await addDoc(collection(db, "siparisler"), {
-          isim: user.displayName,
-          email: user.email,
-          uid: user.uid,
+          isim: user!.displayName,
+          email: user!.email,
+          uid: user!.uid,
           secimler: gecerliSecimler,
           tarih: bugununTarihi,
         });
@@ -303,7 +379,70 @@
         </div>
       );
     }
+if (mevcutSiparis) {
+  return (
+    <div style={styles.page}>
+      <h2>📋 Bugünkü Siparişiniz</h2>
 
+      <ul>
+        {mevcutSiparis.secimler.map(
+          (item, index) => (
+            <li key={index}>{item}</li>
+          )
+        )}
+      </ul>
+
+  <button
+  style={{
+    ...styles.primaryButton,
+    background: siparisKapali
+      ? "#9ca3af"
+      : "#2563eb",
+  }}
+  onClick={() => {
+    if (siparisKapali) {
+      alert("Sipariş süresi sona ermiştir.");
+      return;
+    }
+
+    setMevcutSiparis(null);
+    setSecimTipi(null);
+  }}
+>
+  {siparisKapali
+    ? "Sipariş Süresi Doldu"
+    : "Siparişi Düzenle"}
+</button>
+
+<button
+  onClick={siparisiIptalEt}
+  style={{
+    ...styles.dangerButton,
+    marginLeft: "10px",
+    background: siparisKapali
+      ? "#9ca3af"
+      : "#dc2626",
+    cursor: "pointer",
+  }}
+>
+  {siparisKapali
+    ? "Sipariş Süresi Doldu"
+    : "Siparişi İptal Et"}
+</button>
+      {adminMi && (
+  <button
+    style={{
+      ...styles.successButton,
+      marginLeft: "10px",
+    }}
+    onClick={() => setAdminSayfasi(true)}
+  >
+    Admin Paneli
+  </button>
+)}
+    </div>
+  );
+}
     if (gonderildi) {
      return (
   <div style={styles.page}>
@@ -311,7 +450,7 @@
           <h3>Siparişiniz:</h3>
 <ul>
   {Object.entries(secimler)
-    .filter(([_, value]) => value)
+    .filter(([, value]) => value)
     .map(([key, value]) => (
       <li key={key}>
         <strong>{key}:</strong> {value}
@@ -319,13 +458,46 @@
     ))}
 </ul>
 
-          <button onClick={() => setGonderildi(false)}>Siparişi Düzenle</button>
           <button
-            onClick={siparisiIptalEt}
-            style={{ marginLeft: "10px", background: "#dc3545", color: "white", border: "none", padding: "8px 12px", borderRadius: "4px", cursor: "pointer" }}
-          >
-            Siparişi İptal Et
-          </button>
+  onClick={() => {
+    if (siparisKapali) {
+      alert("Sipariş süresi sona ermiştir.");
+      return;
+    }
+
+    setGonderildi(false);
+  }}
+  style={{
+    padding: "10px 16px",
+    fontSize: "15px",
+    borderRadius: "8px",
+    border: "none",
+    cursor: "pointer",
+    background: siparisKapali
+      ? "#9ca3af"
+      : "#2563eb",
+    color: "white",
+  }}
+>
+  {siparisKapali
+    ? "Sipariş Süresi Doldu"
+    : "Siparişi Düzenle"}
+</button>
+<button
+  onClick={siparisiIptalEt}
+  style={{
+    ...styles.dangerButton,
+    marginLeft: "10px",
+    background: siparisKapali
+      ? "#9ca3af"
+      : "#dc2626",
+    cursor: "pointer",
+  }}
+>
+  {siparisKapali
+    ? "Sipariş Süresi Doldu"
+    : "Siparişi İptal Et"}
+</button>
           {adminMi && (
             <button
               onClick={() => setAdminSayfasi(true)}
