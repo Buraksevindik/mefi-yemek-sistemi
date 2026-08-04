@@ -256,7 +256,7 @@ Kurallar:
 // 2. ZAMANLANMIŞ METİN NOTU İŞLEME FONKSİYONU (Cloud Scheduler)
 // ==========================================
 exports.gunlukMenuTetikleyicisi = onSchedule({
-  schedule: "22 09 * * 1-6",
+  schedule: "15 09 * * 1-6",
   timeZone: "Europe/Istanbul"
 }, async (event) => {
     console.log("Havuzdaki metin notlarını toplu işleme görevi başladı...");
@@ -354,7 +354,7 @@ Kurallar:
 });
 
 exports.tatliMeyveHatirlatma = onSchedule({
-  schedule: "20 09 * * 1-6",
+  schedule: "14 09 * * 1-6",
   timeZone: "Europe/Istanbul"
 }, async () => {
   try {

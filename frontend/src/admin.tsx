@@ -11,45 +11,111 @@ import {
 } from "firebase/firestore";
 import { db } from "./services/firebase";
 
+
 function Admin({ geriDon }: any) {
+  const styles = {
+  page: {
+    maxWidth: "1200px",
+    margin: "0 auto",
+    padding: "30px",
+    fontFamily: "Segoe UI, sans-serif",
+  },
+
+  card: {
+    background: "#fff",
+    border: "1px solid #e5e7eb",
+    borderRadius: "12px",
+    padding: "16px",
+    marginBottom: "12px",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+  },
+
+  primaryButton: {
+    background: "#2563eb",
+    color: "#fff",
+    border: "none",
+    padding: "10px 16px",
+    borderRadius: "8px",
+    cursor: "pointer",
+  },
+
+  successButton: {
+    background: "#16a34a",
+    color: "#fff",
+    border: "none",
+    padding: "10px 16px",
+    borderRadius: "8px",
+    cursor: "pointer",
+  },
+
+ dangerButton: {
+  background: "#dc2626",
+  color: "#fff",
+  border: "none",
+  padding: "10px 16px",
+  borderRadius: "8px",
+  cursor: "pointer",
+},
+secondaryButton: {
+  background: "#6b7280",
+  color: "#fff",
+  border: "none",
+  padding: "10px 16px",
+  borderRadius: "8px",
+  cursor: "pointer",
+},
+
+  warningButton: {
+    background: "#f59e0b",
+    color: "#fff",
+    border: "none",
+    padding: "10px 16px",
+    borderRadius: "8px",
+    cursor: "pointer",
+  },
+};
   const [siparisler, setSiparisler] = useState<any[]>([]);
   const [mesaj, setMesaj] = useState("");
   const [sayfa, setSayfa] = useState<
-    "menu" | "alternatif" | "siparisler"
-  >("menu");
-  
+  "menu" | "alternatif" | "siparisler"
+>("menu");
   const [alternatifMenu, setAlternatifMenu] = useState<any>({
-    yemekler: [],
-    icecekler: [],
-  });
-
-  const [yeniYemekInput, setYeniYemekInput] = useState("");
-  const [yeniIcecekInput, setYeniIcecekInput] = useState("");
-  
-  const [duzenlenenYemekIndex, setDuzenlenenYemekIndex] = useState<number | null>(null);
-  const [duzenlenenYemekMetin, setDuzenlenenYemekMetin] = useState("");
-
-  const [duzenlenenIcecekIndex, setDuzenlenenIcecekIndex] = useState<number | null>(null);
-  const [duzenlenenIcecekMetin, setDuzenlenenIcecekMetin] = useState("");
+  yemekler: [],
+  icecekler: [],
+});
+const [yeniYemek, setYeniYemek] = useState("");
+const [yeniIcecek, setYeniIcecek] = useState("");
 
   useEffect(() => {
     const fetchAlternatifMenu = async () => {
-      const alternatifRef = doc(db, "menuler", "alternatif_menu");
-      const alternatifSnap = await getDoc(alternatifRef);
+  const alternatifRef = doc(
+    db,
+    "menuler",
+    "alternatif_menu"
+  );
 
-      if (alternatifSnap.exists()) {
-        setAlternatifMenu(alternatifSnap.data());
-      }
-    };
+  const alternatifSnap = await getDoc(
+    alternatifRef
+  );
 
+  if (alternatifSnap.exists()) {
+    setAlternatifMenu(
+      alternatifSnap.data()
+    );
+  }
+};
     const fetchSiparisler = async () => {
-      const bugununTarihi = new Date().toISOString().split("T")[0];
+      const bugununTarihi = new Date()
+        .toISOString()
+        .split("T")[0];
+
       const q = query(
         collection(db, "siparisler"),
         where("tarih", "==", bugununTarihi)
       );
 
       const snapshot = await getDocs(q);
+
       const veriler = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
@@ -63,21 +129,32 @@ function Admin({ geriDon }: any) {
   }, []);
 
   const yemekSayilari: { [key: string]: number } = {};
+
   siparisler.forEach((siparis) => {
     siparis.secimler?.forEach((yemek: string) => {
-      yemekSayilari[yemek] = (yemekSayilari[yemek] || 0) + 1;
+      yemekSayilari[yemek] =
+        (yemekSayilari[yemek] || 0) + 1;
     });
   });
 
   const toplamKisi = siparisler.length;
 
   const siparisSil = async (id: string) => {
-    const onay = window.confirm("Bu siparişi silmek istediğinize emin misiniz?");
+    const onay = window.confirm(
+      "Bu siparişi silmek istediğinize emin misiniz?"
+    );
+
     if (!onay) return;
 
     try {
       await deleteDoc(doc(db, "siparisler", id));
-      setSiparisler((prev) => prev.filter((siparis) => siparis.id !== id));
+
+      setSiparisler((prev) =>
+        prev.filter(
+          (siparis) => siparis.id !== id
+        )
+      );
+
       alert("Sipariş silindi.");
     } catch (error) {
       console.error(error);
@@ -87,333 +164,377 @@ function Admin({ geriDon }: any) {
 
   const mesajOlustur = () => {
     let metin = "MEFİ YEMEK SİPARİŞLERİ\n\n";
-    Object.entries(yemekSayilari).forEach(([yemek, adet]) => {
-      metin += `${yemek} : ${adet}\n`;
-    });
+
+    Object.entries(yemekSayilari).forEach(
+      ([yemek, adet]) => {
+        metin += `${yemek} : ${adet}\n`;
+      }
+    );
+
     metin += `\nToplam Kişi: ${toplamKisi}`;
+
     setMesaj(metin);
   };
 
   const alternatifMenuyuKaydet = async () => {
-    try {
-      await updateDoc(doc(db, "menuler", "alternatif_menu"), alternatifMenu);
-      alert("Alternatif menü güncellendi.");
-    } catch (err) {
-      console.error(err);
-      alert("Kaydedilemedi.");
-    }
-  };
-
-  // Yemek İşlemleri
-  const yemekSil = (index: number) => {
-    const yeniListe = [...alternatifMenu.yemekler];
-    yeniListe.splice(index, 1);
-    setAlternatifMenu({ ...alternatifMenu, yemekler: yeniListe });
-  };
-
-  const yemekEkle = () => {
-    if (!yeniYemekInput.trim()) return;
-    setAlternatifMenu({
-      ...alternatifMenu,
-      yemekler: [...alternatifMenu.yemekler, yeniYemekInput.trim()],
-    });
-    setYeniYemekInput("");
-  };
-
-  const yemekDuzenleKaydet = (index: number) => {
-    if (!duzenlenenYemekMetin.trim()) return;
-    const yeniListe = [...alternatifMenu.yemekler];
-    yeniListe[index] = duzenlenenYemekMetin.trim();
-    setAlternatifMenu({ ...alternatifMenu, yemekler: yeniListe });
-    setDuzenlenenYemekIndex(null);
-    setDuzenlenenYemekMetin("");
-  };
-
-  // İçecek İşlemleri
-  const icecekSil = (index: number) => {
-    const yeniListe = [...alternatifMenu.icecekler];
-    yeniListe.splice(index, 1);
-    setAlternatifMenu({ ...alternatifMenu, icecekler: yeniListe });
-  };
-
-  const icecekEkle = () => {
-    if (!yeniIcecekInput.trim()) return;
-    setAlternatifMenu({
-      ...alternatifMenu,
-      icecekler: [...alternatifMenu.icecekler, yeniIcecekInput.trim()],
-    });
-    setYeniIcecekInput("");
-  };
-
-  const icecekDuzenleKaydet = (index: number) => {
-    if (!duzenlenenIcecekMetin.trim()) return;
-    const yeniListe = [...alternatifMenu.icecekler];
-    yeniListe[index] = duzenlenenIcecekMetin.trim();
-    setAlternatifMenu({ ...alternatifMenu, icecekler: yeniListe });
-    setDuzenlenenIcecekIndex(null);
-    setDuzenlenenIcecekMetin("");
-  };
-
-  if (sayfa === "menu") {
-    return (
-      <div style={{ padding: "20px" }}>
-        <button onClick={geriDon}>← Sipariş Ekranına Dön</button>
-        <h1>Admin Paneli</h1>
-        <div style={{ display: "flex", gap: "20px", marginTop: "30px" }}>
-          <button
-            onClick={() => setSayfa("alternatif")}
-            style={{
-              padding: "20px",
-              width: "250px",
-              fontSize: "18px",
-              borderRadius: "12px",
-              border: "none",
-              background: "#ffc107",
-              cursor: "pointer",
-            }}
-          >
-            Alternatif Menü Yönetimi
-          </button>
-          <button
-            onClick={() => setSayfa("siparisler")}
-            style={{
-              padding: "20px",
-              width: "250px",
-              fontSize: "18px",
-              borderRadius: "12px",
-              border: "none",
-              background: "#007bff",
-              color: "white",
-              cursor: "pointer",
-            }}
-          >
-            📋 Siparişleri Görüntüle
-          </button>
-        </div>
-      </div>
+  try {
+    await updateDoc(
+      doc(db, "menuler", "alternatif_menu"),
+      alternatifMenu
     );
+
+    alert("Alternatif menü güncellendi.");
+  } catch (err) {
+    console.error(err);
+    alert("Kaydedilemedi.");
   }
+};
 
-  if (sayfa === "alternatif") {
-    return (
-      <div style={{ padding: "20px", maxWidth: "600px" }}>
-        <button onClick={() => setSayfa("menu")}>← Geri</button>
-        <h1>Alternatif Menü Yönetimi</h1>
+const yemekSil = (index: number) => {
+  const yeniListe = [...alternatifMenu.yemekler];
 
-        {/* YEMEKLER */}
-        <h2>🍔 Yemekler</h2>
-        {alternatifMenu.yemekler?.map((yemek: string, index: number) => (
-          <div
-            key={index}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "10px",
-              border: "1px solid #ddd",
-              marginBottom: "10px",
-              borderRadius: "6px",
-            }}
-          >
-            {duzenlenenYemekIndex === index ? (
-              <div style={{ display: "flex", gap: "10px", flex: 1, marginRight: "10px" }}>
-                <input
-                  type="text"
-                  value={duzenlenenYemekMetin}
-                  onChange={(e) => setDuzenlenenYemekMetin(e.target.value)}
-                  style={{ flex: 1, padding: "5px" }}
-                />
-                <button onClick={() => yemekDuzenleKaydet(index)}>Kaydet</button>
-                <button onClick={() => setDuzenlenenYemekIndex(null)}>İptal</button>
-              </div>
-            ) : (
-              <>
-                <span>{yemek}</span>
-                <div>
-                  <button
-                    onClick={() => {
-                      setDuzenlenenYemekIndex(index);
-                      setDuzenlenenYemekMetin(yemek);
-                    }}
-                    style={{ marginRight: "5px" }}
-                  >
-                    Düzenle
-                  </button>
-                  <button onClick={() => yemekSil(index)} style={{ background: "#ff4d4d", color: "white", border: "none", padding: "5px 10px", borderRadius: "4px" }}>
-                    Sil
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        ))}
+  yeniListe.splice(index, 1);
 
-        {/* Yeni Yemek Ekleme Alanı */}
-        <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
-          <input
-            type="text"
-            placeholder="Yeni yemek adı"
-            value={yeniYemekInput}
-            onChange={(e) => setYeniYemekInput(e.target.value)}
-            style={{ flex: 1, padding: "8px", borderRadius: "4px", border: "1px solid #ccc" }}
-          />
-          <button onClick={yemekEkle} style={{ padding: "8px 15px", background: "#28a745", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>
-            + Yeni Yemek
-          </button>
-        </div>
+  setAlternatifMenu({
+    ...alternatifMenu,
+    yemekler: yeniListe,
+  });
+};
 
-        {/* İÇECEKLER */}
-        <h2 style={{ marginTop: "40px" }}>🥤 İçecekler</h2>
-        {alternatifMenu.icecekler?.map((icecek: string, index: number) => (
-          <div
-            key={index}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "10px",
-              border: "1px solid #ddd",
-              marginBottom: "10px",
-              borderRadius: "6px",
-            }}
-          >
-            {duzenlenenIcecekIndex === index ? (
-              <div style={{ display: "flex", gap: "10px", flex: 1, marginRight: "10px" }}>
-                <input
-                  type="text"
-                  value={duzenlenenIcecekMetin}
-                  onChange={(e) => setDuzenlenenIcecekMetin(e.target.value)}
-                  style={{ flex: 1, padding: "5px" }}
-                />
-                <button onClick={() => icecekDuzenleKaydet(index)}>Kaydet</button>
-                <button onClick={() => setDuzenlenenIcecekIndex(null)}>İptal</button>
-              </div>
-            ) : (
-              <>
-                <span>{icecek}</span>
-                <div>
-                  <button
-                    onClick={() => {
-                      setDuzenlenenIcecekIndex(index);
-                      setDuzenlenenIcecekMetin(icecek);
-                    }}
-                    style={{ marginRight: "5px" }}
-                  >
-                    Düzenle
-                  </button>
-                  <button onClick={() => icecekSil(index)} style={{ background: "#ff4d4d", color: "white", border: "none", padding: "5px 10px", borderRadius: "4px" }}>
-                    Sil
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        ))}
+const icecekSil = (index: number) => {
+  const yeniListe = [...alternatifMenu.icecekler];
 
-        {/* Yeni İçecek Ekleme Alanı */}
-        <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
-          <input
-            type="text"
-            placeholder="Yeni içecek adı"
-            value={yeniIcecekInput}
-            onChange={(e) => setYeniIcecekInput(e.target.value)}
-            style={{ flex: 1, padding: "8px", borderRadius: "4px", border: "1px solid #ccc" }}
-          />
-          <button onClick={icecekEkle} style={{ padding: "8px 15px", background: "#28a745", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>
-            + Yeni İçecek
-          </button>
-        </div>
+  yeniListe.splice(index, 1);
 
-        <br /><br />
-        <button
-          onClick={alternatifMenuyuKaydet}
-          style={{ padding: "12px 20px", background: "#007bff", color: "white", border: "none", borderRadius: "6px", fontSize: "16px", cursor: "pointer", width: "100%" }}
-        >
-          Değişiklikleri Veritabanına Kaydet
-        </button>
+  setAlternatifMenu({
+    ...alternatifMenu,
+    icecekler: yeniListe,
+  });
+};
+
+
+if (sayfa === "menu") {
+  return (
+    <div style={styles.page}>
+<button
+  onClick={geriDon}
+  style={{
+    padding: "10px 16px",
+    fontSize: "15px",
+    borderRadius: "8px",
+    border: "none",
+    cursor: "pointer",
+    background: "#2563eb",
+    color: "white",
+    marginBottom: "15px",
+  }}
+>
+  ← Sipariş Ekranına Geri Dön
+</button>
+
+      <h1>Admin Paneli</h1>
+
+<div
+  style={{
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit,minmax(280px,1fr))",
+    gap: "24px",
+    marginTop: "30px",
+  }}
+>
+<button
+  onClick={() => setSayfa("alternatif")}
+  style={{
+    ...styles.warningButton,
+    width: "100%",
+    padding: "30px",
+    fontSize: "20px",
+  }}
+>
+  🍔 Alternatif Menü Yönetimi
+</button>
+
+<button
+  onClick={() => setSayfa("siparisler")}
+  style={{
+    ...styles.primaryButton,
+    width: "100%",
+    padding: "30px",
+    fontSize: "20px",
+  }}
+>
+  📋 Siparişleri Görüntüle
+</button>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  if (sayfa === "siparisler") {
-    return (
-      <div style={{ padding: "20px" }}>
-        <button onClick={() => setSayfa("menu")}>← Geri</button>
-        <h1>Admin Paneli</h1>
-        <h2>Toplam Sipariş Özeti</h2>
+if (sayfa === "alternatif") {
+  return (
+    <div style={styles.page}>
+      <button
+        onClick={() =>
+          setSayfa("menu")
+        }
+      >
+        ← Geri
+      </button>
 
-        <button
-          onClick={mesajOlustur}
-          style={{ marginTop: "15px", padding: "10px 15px", cursor: "pointer" }}
-        >
-          Mesaj Oluştur
-        </button>
+      <h1>Alternatif Menü Yönetimi</h1>
 
-        {mesaj && (
-          <div style={{ marginTop: "20px" }}>
-            <h3>Oluşturulan Mesaj</h3>
-            <pre style={{ background: "#f4f4f4", padding: "15px", borderRadius: "8px" }}>
-              {mesaj}
-            </pre>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(mesaj);
-                alert("Mesaj panoya kopyalandı!");
-              }}
-            >
-              Mesajı Kopyala
-            </button>
+      <h2>🍔 Yemekler</h2>
+
+      {alternatifMenu.yemekler?.map(
+        (yemek: string, index: number) => (
+<div
+  key={index}
+  style={{
+    ...styles.card,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  }}
+>
+            <span>{yemek}</span>
+
+            <div
+  style={{
+    display: "flex",
+    gap: "8px",
+  }}
+>
+ 
+
+  <button
+    style={styles.dangerButton}
+    onClick={() => yemekSil(index)}
+  >
+    Sil
+  </button>
+</div>
           </div>
-        )}
+        )
+      )}
 
-        <ul>
-          {Object.entries(yemekSayilari).map(([yemek, adet]) => (
-            <li key={yemek}>
-              {yemek} : {adet}
-            </li>
-          ))}
-        </ul>
+<div style={{ display: "flex", gap: "10px", marginTop: "15px" }}>
+  <input
+    value={yeniYemek}
+    onChange={(e) => setYeniYemek(e.target.value)}
+    placeholder="Yemek adı"
+  />
 
-        <p>
-          <strong>Toplam Sipariş Veren Kişi:</strong> {toplamKisi}
-        </p>
+  <button
+    style={styles.successButton}
+    onClick={() => {
+      if (!yeniYemek.trim()) return;
 
-        {siparisler.map((siparis) => (
-          <div
-            key={siparis.id}
+      setAlternatifMenu({
+        ...alternatifMenu,
+        yemekler: [
+          ...alternatifMenu.yemekler,
+          yeniYemek,
+        ],
+      });
+
+      setYeniYemek("");
+    }}
+  >
+    + Ekle
+  </button>
+</div>
+
+      <h2 style={{ marginTop: "40px" }}>
+        🥤 İçecekler
+      </h2>
+
+      {alternatifMenu.icecekler?.map(
+        (
+          icecek: string,
+          index: number
+        ) => (
+<div
+  key={index}
+  style={{
+    ...styles.card,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  }}
+>
+            <span>{icecek}</span>
+
+            <div
+  style={{
+    display: "flex",
+    gap: "8px",
+  }}
+>
+
+
+<button
+  style={styles.dangerButton}
+  onClick={() => icecekSil(index)}
+>
+                Sil
+              </button>
+            </div>
+          </div>
+        )
+      )}
+
+      <div style={{ display: "flex", gap: "10px", marginTop: "15px" }}>
+  <input
+    value={yeniIcecek}
+    onChange={(e) => setYeniIcecek(e.target.value)}
+    placeholder="İçecek adı"
+  />
+
+  <button
+    style={styles.successButton}
+    onClick={() => {
+      if (!yeniIcecek.trim()) return;
+
+      setAlternatifMenu({
+        ...alternatifMenu,
+        icecekler: [
+          ...alternatifMenu.icecekler,
+          yeniIcecek,
+        ],
+      });
+
+      setYeniIcecek("");
+    }}
+  >
+    + Ekle
+  </button>
+</div>
+
+      <br />
+      <br />
+
+<button
+  style={{
+    ...styles.successButton,
+    width: "100%",
+    marginTop: "30px",
+    fontSize: "18px",
+    padding: "14px",
+  }}
+  onClick={alternatifMenuyuKaydet}
+>
+         Kaydet
+      </button>
+    </div>
+  );
+}
+
+ if (sayfa === "siparisler") { return (
+    <div style={styles.page}>
+<button
+  onClick={() => setSayfa("menu")}
+>
+  ← Geri
+</button>
+
+      <h1>Admin Paneli</h1>
+
+      <h2>Toplam Sipariş Özeti</h2>
+
+      <button
+        onClick={mesajOlustur}
+style={styles.warningButton}
+      >
+        Mesaj Oluştur
+      </button>
+
+      {mesaj && (
+        <div
+  style={{
+    ...styles.card,
+    marginTop: "20px",
+  }}
+>
+          <h3>Oluşturulan Mesaj</h3>
+
+          <pre
             style={{
-              border: "1px solid #ddd",
+              background: "#f4f4f4",
               padding: "15px",
-              marginBottom: "15px",
               borderRadius: "8px",
             }}
           >
-            <h3>{siparis.isim}</h3>
-            <button
-              onClick={() => siparisSil(siparis.id)}
-              style={{
-                background: "#dc3545",
-                color: "white",
-                border: "none",
-                padding: "8px 12px",
-                borderRadius: "4px",
-                cursor: "pointer",
-                marginBottom: "10px",
-              }}
-            >
-              Siparişi Sil
-            </button>
-            <p>{siparis.email}</p>
-            <ul>
-              {siparis.secimler?.map((yemek: string, index: number) => (
-                <li key={index}>{yemek}</li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
-    );
-  }
+            {mesaj}
+          </pre>
+
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(
+                mesaj
+              );
+              alert(
+                "Mesaj panoya kopyalandı!"
+              );
+            }}
+          >
+            Mesajı Kopyala
+          </button>
+        </div>
+      )}
+<div style={styles.card}>
+      <ul>
+        {Object.entries(yemekSayilari).map(
+          ([yemek, adet]) => (
+            <li key={yemek}>
+              {yemek} : {adet}
+            </li>
+          )
+        )}
+      </ul>
+</div>
+      <p>
+        <strong>
+          Toplam Sipariş Veren Kişi:
+        </strong>{" "}
+        {toplamKisi}
+      </p>
+
+      {siparisler.map((siparis) => (
+<div
+  key={siparis.id}
+  style={styles.card}
+>
+          <h3>{siparis.isim}</h3>
+
+          <button
+            onClick={() =>
+              siparisSil(siparis.id)
+            }
+style={styles.dangerButton}
+          >
+            Siparişi Sil
+          </button>
+
+          <p>{siparis.email}</p>
+
+          <ul>
+            {siparis.secimler?.map(
+              (
+                yemek: string,
+                index: number
+              ) => (
+                <li key={index}>
+                  {yemek}
+                </li>
+              )
+            )}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
 }
 
 export default Admin;

@@ -1,4 +1,4 @@
-  import Admin from "./Admin";
+  import Admin from "./admin";
   import { useEffect, useState } from "react";
   import {
     doc,
@@ -22,6 +22,50 @@
   } from "firebase/auth";
 
   function App() {
+    const styles = {
+  page: {
+    maxWidth: "900px",
+    margin: "0 auto",
+    padding: "30px",
+    fontFamily: "Segoe UI, sans-serif",
+  },
+
+  card: {
+    background: "#fff",
+    border: "1px solid #e5e7eb",
+    borderRadius: "12px",
+    padding: "16px",
+    marginBottom: "16px",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+  },
+
+  primaryButton: {
+    background: "#2563eb",
+    color: "#fff",
+    border: "none",
+    padding: "10px 16px",
+    borderRadius: "8px",
+    cursor: "pointer",
+  },
+
+  successButton: {
+    background: "#16a34a",
+    color: "#fff",
+    border: "none",
+    padding: "10px 16px",
+    borderRadius: "8px",
+    cursor: "pointer",
+  },
+
+  dangerButton: {
+    background: "#dc2626",
+    color: "#fff",
+    border: "none",
+    padding: "10px 16px",
+    borderRadius: "8px",
+    cursor: "pointer",
+  },
+};
     const [menu, setMenu] = useState<any>(null);
     const [alternatifMenu, setAlternatifMenu] = useState<any>(null);
     const [secimler, setSecimler] = useState<{ [kategori: string]: string }>({});
@@ -137,7 +181,7 @@
       }
     };
 
-    const gunlerIngilizce = [
+    const gunler = [
       "Pazar",
       "Pazartesi",
       "Sali",
@@ -158,7 +202,7 @@
     };
 
     const bugunIndex = new Date().getDay();
-    const bugunKey = gunlerIngilizce[bugunIndex];
+    const bugunKey = gunler[bugunIndex];
     
 
     const bugununMenusu = menu?.[bugunKey];
@@ -261,17 +305,19 @@
     }
 
     if (gonderildi) {
-      return (
-        <div style={{ padding: "20px", maxWidth: "600px", margin: "0 auto", fontFamily: "sans-serif" }}>
+     return (
+  <div style={styles.page}>
           <h2>✅ Siparişiniz oluşturuldu.</h2>
           <h3>Siparişiniz:</h3>
-          <ul>
-            {Object.values(secimler)
-              .filter(Boolean)
-              .map((yemek, i) => (
-                <li key={i}>{yemek}</li>
-              ))}
-          </ul>
+<ul>
+  {Object.entries(secimler)
+    .filter(([_, value]) => value)
+    .map(([key, value]) => (
+      <li key={key}>
+        <strong>{key}:</strong> {value}
+      </li>
+    ))}
+</ul>
 
           <button onClick={() => setGonderildi(false)}>Siparişi Düzenle</button>
           <button
@@ -292,35 +338,43 @@
       );
     }
 
-    return (
-      <div
-        style={{
-          padding: "20px",
-          maxWidth: "600px",
-          margin: "0 auto",
-          fontFamily: "sans-serif",
-        }}
-      >
+return (
+  <div style={styles.page}>
         <h1>MEFİ Menü & Sipariş</h1>
 
-        <div style={{ display: "flex", gap: "10px", marginBottom: "15px" }}>
+        <div
+  style={{
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "20px",
+  }}
+>
           {adminMi && (
-            <button onClick={() => setAdminSayfasi(true)}>Admin Paneli</button>
+            <button
+  style={styles.primaryButton}
+  onClick={() => setAdminSayfasi(true)}
+>
+  Admin Paneli
+</button>
           )}
-          <button
-            onClick={async () => {
-              await signOut(auth);
-              setUser(null);
-            }}
-            style={{ background: "#6c757d", color: "white", border: "none", padding: "6px 12px", borderRadius: "4px", cursor: "pointer" }}
-          >
-            Çıkış Yap
-          </button>
+<button
+  style={{
+    ...styles.dangerButton,
+    background: "#6b7280",
+  }}
+  onClick={async () => {
+    await signOut(auth);
+    setUser(null);
+  }}
+>
+  Çıkış Yap
+</button>
         </div>
 
         {/* SEÇİM TİPİ SEÇME EKRANI (Günün Menüsü vs Alternatif Menü) */}
         {!secimTipi ? (
-          <div style={{ background: "#f8f9fa", padding: "20px", borderRadius: "8px", border: "1px solid #ddd", textAlign: "center" }}>
+        <div style={styles.card}>
             <h3>Nasıl devam etmek istersiniz?</h3>
             <div style={{ display: "flex", gap: "15px", justifyContent: "center", marginTop: "20px" }}>
               <button
@@ -328,7 +382,7 @@
                   setSecimTipi("gunluk");
                   setSecimler({}); // Alternatif seçimleri sıfırla
                 }}
-                style={{ padding: "12px 20px", background: "#007BFF", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "15px" }}
+               style={styles.primaryButton}
               >
                 📅 Bugünün Menüsü ({gunIsimleriTurkce[bugunKey]})
               </button>
@@ -337,7 +391,10 @@
                   setSecimTipi("alternatif");
                   setSecimler({}); // Günlük menü seçimlerini sıfırla
                 }}
-                style={{ padding: "12px 20px", background: "#ffc107", color: "#000", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "15px", fontWeight: "bold" }}
+                style={{
+  ...styles.primaryButton,
+  background: "#f59e0b",
+}}
               >
                 🍔 Alternatif / Alakart Seçenekler
               </button>
@@ -350,7 +407,11 @@
                 setSecimTipi(null);
                 setSecimler({});
               }}
-              style={{ marginBottom: "15px", padding: "6px 10px", cursor: "pointer" }}
+             style={{
+  ...styles.primaryButton,
+  background: "#6b7280",
+  marginBottom: "15px",
+}}
             >
               ⬅ Menü Seçimine Geri Dön
             </button>
@@ -370,13 +431,7 @@
   .map((kategori) => (
                         <div
                           key={kategori}
-                          style={{
-                            marginBottom: "20px",
-                            padding: "15px",
-                            border: "1px solid #ddd",
-                            borderRadius: "8px",
-                            background: "#fff",
-                          }}
+     style={styles.card}
                         >
                           <h4 style={{ textTransform: "capitalize", color: "#333", marginTop: 0 }}>
                             {kategori}
@@ -389,14 +444,10 @@
                                   <button
                                     onClick={() => yemekSec(kategori, yemek)}
                                     style={{
-                                      background: seciliMi ? "#4CAF50" : "#f0f0f0",
-                                      color: seciliMi ? "#fff" : "#000",
-                                      padding: "6px 12px",
-                                      border: "1px solid #ccc",
-                                      cursor: "pointer",
-                                      borderRadius: "4px",
-                                      minWidth: "90px",
-                                    }}
+  ...styles.primaryButton,
+  background: seciliMi ? "#16a34a" : "#2563eb",
+  minWidth: "100px",
+}}
                                   >
                                     {seciliMi ? "✓ Seçildi" : "+ Seç"}
                                   </button>
@@ -415,8 +466,8 @@
             {/* 2. ALTERNATİF / ALAKART MENÜ GÖRÜNÜMÜ */}
             {secimTipi === "alternatif" && alternatifMenu && (
               <div>
-                <h3>Alternatif Ana Yemek Seçimi (1 Adet Seçiniz):</h3>
-                <div style={{ marginBottom: "20px", padding: "15px", border: "1px solid #ddd", borderRadius: "8px", background: "#fff" }}>
+                <div style={styles.card}>
+  <h3>🍔 Alternatif Ana Yemek</h3>
                   <ul style={{ listStyleType: "none", padding: 0 }}>
                   {alternatifMenu?.yemekler?.map((yemek: string, index: number) => {
                       const seciliMi = secimler["Alternatif Yemek"] === yemek;
@@ -425,14 +476,10 @@
                           <button
                             onClick={() => yemekSec("Alternatif Yemek", yemek)}
                             style={{
-                              background: seciliMi ? "#4CAF50" : "#f0f0f0",
-                              color: seciliMi ? "#fff" : "#000",
-                              padding: "6px 12px",
-                              border: "1px solid #ccc",
-                              cursor: "pointer",
-                              borderRadius: "4px",
-                              minWidth: "90px",
-                            }}
+  ...styles.primaryButton,
+  background: seciliMi ? "#16a34a" : "#2563eb",
+  minWidth: "100px",
+}}
                           >
                             {seciliMi ? "✓ Seçildi" : "+ Seç"}
                           </button>
@@ -443,8 +490,8 @@
                   </ul>
                 </div>
 
-                <h3>İçecek Seçimi (1 Adet Seçiniz):</h3>
-                <div style={{ marginBottom: "20px", padding: "15px", border: "1px solid #ddd", borderRadius: "8px", background: "#fff" }}>
+<div style={styles.card}>
+  <h3>🥤 İçecek Seçimi</h3>
                   <ul style={{ listStyleType: "none", padding: 0 }}>
                   {alternatifMenu?.icecekler?.map((icecek: string, index: number) => {
                       const seciliMi = secimler["İçecek"] === icecek;
@@ -452,15 +499,11 @@
                         <li key={index} style={{ margin: "10px 0", display: "flex", alignItems: "center", gap: "10px" }}>
                           <button
                             onClick={() => yemekSec("İçecek", icecek)}
-                            style={{
-                              background: seciliMi ? "#4CAF50" : "#f0f0f0",
-                              color: seciliMi ? "#fff" : "#000",
-                              padding: "6px 12px",
-                              border: "1px solid #ccc",
-                              cursor: "pointer",
-                              borderRadius: "4px",
-                              minWidth: "90px",
-                            }}
+style={{
+  ...styles.primaryButton,
+  background: seciliMi ? "#16a34a" : "#2563eb",
+  minWidth: "100px",
+}}
                           >
                             {seciliMi ? "✓ Seçildi" : "+ Seç"}
                           </button>
@@ -474,27 +517,30 @@
             )}
 
             {/* SEÇİMLER VE ONAY KISMI */}
-            <div style={{ marginTop: "20px", padding: "15px", background: "#f9f9f9", borderRadius: "8px", border: "1px solid #eee" }}>
+            <div
+  style={{
+    ...styles.card,
+    marginTop: "20px",
+  }}
+>
               <h4>Seçimleriniz:</h4>
-              <pre style={{ background: "#fff", padding: "10px", borderRadius: "4px" }}>
-                {JSON.stringify(secimler, null, 2)}
-              </pre>
+             <ul>
+  {Object.values(secimler)
+    .filter(Boolean)
+    .map((item, i) => (
+      <li key={i}>{item}</li>
+    ))}
+</ul>
 
               <button
                 onClick={siparisiOnayla}
                 disabled={siparisKapali}
                 style={{
-                  marginTop: "10px",
-                  background: siparisKapali ? "#999" : "#007BFF",
-                  color: "#fff",
-                  padding: "12px 20px",
-                  border: "none",
-                  cursor: siparisKapali ? "not-allowed" : "pointer",
-                  borderRadius: "4px",
-                  fontSize: "16px",
-                  width: "100%",
-                  fontWeight: "bold",
-                }}
+  ...styles.primaryButton,
+  width: "100%",
+  marginTop: "10px",
+  background: siparisKapali ? "#9ca3af" : "#2563eb",
+}}
               >
                 {siparisKapali ? "Sipariş Süresi Doldu" : "Siparişi Onayla ve Gönder"}
               </button>
