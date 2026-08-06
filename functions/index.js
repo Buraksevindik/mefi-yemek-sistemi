@@ -1,75 +1,85 @@
 // Firebase ve diğer kütüphaneler
 const { onRequest } = require("firebase-functions/v2/https");
+const { GoogleAuth } = require("google-auth-library");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
-const path = require("path");
-const os = require("os");
-const fs = require("fs");
 const axios = require("axios");
+const functions = require("firebase-functions");
 
 // Firebase Admin'i başlat
 initializeApp();
 const db = getFirestore();
 
 const genAI = new GoogleGenerativeAI(process.env.API_KEY);
+const CATERING_NUMARASI = "905539318881";
 
-exports.testMesajGonder = onRequest(async (req, res) => {
-  try {
-    const response = await axios.post(
-      "https://graph.facebook.com/v25.0/1125395517333883/messages",
-      {
-        messaging_product: "whatsapp",
-        to: "905539318881", // Uluslararası standart format
-        type: "template",
-        template: {
-          name: "bilgi_talebi",
-          language: {
-            code: "tr"
-          },
-          components: [
+
+async function templateMesajiGonder(metin) {
+    try {
+        const response = await axios.post(
+            "https://graph.facebook.com/v25.0/1125395517333883/messages",
             {
-              type: "body",
-              parameters: [
-                {
-                  type: "text",
-                  text: "Haftalık menü"
+                messaging_product: "whatsapp",
+                to: CATERING_NUMARASI,
+                type: "template",
+                template: {
+                    name: "bilgi_talebi",
+                    language: { code: "tr" },
+                    components: [
+                        {
+                            type: "body",
+                            parameters: [
+                                {
+                                    type: "text",
+                                    text: metin
+                                }
+                            ]
+                        }
+                    ]
                 }
-              ]
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+                    "Content-Type": "application/json"
+                }
             }
-          ]
+        );
+
+        console.log("WhatsApp başarılı:", response.data);
+        return response.data;
+
+    } catch (err) {
+        console.error("Meta cevabı:", err.response?.data);
+        throw err;
+    }
+}
+async function normalMesajGonder(metin) {
+    return axios.post(
+        "https://graph.facebook.com/v25.0/1125395517333883/messages",
+        {
+            messaging_product: "whatsapp",
+            to: CATERING_NUMARASI,
+            type: "text",
+            text: {
+                body: metin
+            }
+        },
+        {
+            headers: {
+                Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+                "Content-Type": "application/json"
+            }
         }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json"
-        }
-      }
     );
-
-    console.log(response.data);
-    res.status(200).send(response.data);
-
-  } catch (error) {
-    console.error(error.response?.data || error.message);
-    res.status(500).send(error.response?.data || error.message);
-  }
-});
+}
 
 // ==========================================
-// 1. WHATSAPP WEBHOOK (Görselleri Anında, Metinleri Havuzda İşleyen Versiyon)
+// 2. WHATSAPP WEBHOOK
 // ==========================================
 exports.whatsappWebhook = onRequest(async (req, res) => {
-    console.log(
-        "-> WEBHOOK'A İSTEK GELDİ! Method:",
-        req.method,
-        "Body:",
-        JSON.stringify(req.body)
-    );
-
-    // A) Meta Webhook Doğrulama (GET isteği)
     if (req.method === "GET") {
         const mode = req.query["hub.mode"];
         const token = req.query["hub.verify_token"];
@@ -77,22 +87,15 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
         const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
         if (mode && token === VERIFY_TOKEN) {
-            console.log("Webhook başarıyla doğrulandı!");
             return res.status(200).send(challenge);
         } else {
             return res.sendStatus(403);
         }
     }
 
-    // B) WhatsApp'tan Gelen Mesaj / Medya Bildirimi (POST isteği)
     if (req.method === "POST") {
-        let gorselYolu = null;
         try {
             const body = req.body;
-
-            console.log("========== POST GELDİ ==========");
-            console.log(JSON.stringify(body, null, 2));
-            console.log("================================");
 
             if (body.object === "whatsapp_business_account") {
                 const entry = body.entry?.[0];
@@ -100,56 +103,37 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                 const value = changes?.value;
                 const message = value?.messages?.[0];
 
-                if (!message) {
-                    return res.sendStatus(200);
-                }
+                if (!message) return res.sendStatus(200);
 
-                const CATERING_NUMARASI = "905539318881"; 
                 const gonderenNumara = message.from;
-
                 if (gonderenNumara !== CATERING_NUMARASI) {
-                    console.log("Yetkisiz numaradan mesaj geldi, yoksayılıyor:", gonderenNumara);
                     return res.sendStatus(200);
                 }
 
                 const messageId = message.id;
 
-                // --- 🛡️ MÜKERRER (DUPLICATE) İSTEK KONTROLÜ ---
-                const mesajVarMi = await db
-                  .collection("islenen_mesajlar")
-                  .doc(messageId)
-                  .get();
-
+                // Mükerrer İstek Kontrolü
+                const mesajVarMi = await db.collection("islenen_mesajlar").doc(messageId).get();
                 if (mesajVarMi.exists) {
-                    console.log("Mükerrer istek engellendi, bu mesaj daha önce işlendi:", messageId);
-                    return res.sendStatus(200); // Meta'ya 200 dönüyoruz ki tekrar darlamasın
+                    return res.sendStatus(200);
                 }
 
                 let mesajTuru = message.type; // "image" veya "text"
 
-                // --- 1. SENARYO: GÖRSEL GELDİYSE ANINDA İŞLE ---
                 if (mesajTuru === "image") {
                     const mediaId = message.image.id;
-                    console.log("Catering şirketinden ana menü görseli alındı, anında işleniyor! Medya ID:", mediaId);
-
                     const mediaResponse = await axios.get(
                         `https://graph.facebook.com/v25.0/${mediaId}`,
-                        {
-                            headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` },
-                        }
+                        { headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` } }
                     );
 
-                    const mediaUrl = mediaResponse.data.url;
-                    const downloadResponse = await axios.get(mediaUrl, {
+                    const downloadResponse = await axios.get(mediaResponse.data.url, {
                         headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` },
                         responseType: "arraybuffer",
                     });
 
-                    gorselYolu = path.join(os.tmpdir(), `instant_menu_${Date.now()}.jpeg`);
-                    fs.writeFileSync(gorselYolu, downloadResponse.data);
-
                     const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
-                    const imageData = fs.readFileSync(gorselYolu).toString("base64");
+                    const imageData = Buffer.from(downloadResponse.data).toString("base64");
 
                     const prompt = `
 Bu bir yemek menüsü görseli. Pazartesi'den Cumartesi'ye kadar olan yemekleri analiz et ve SADECE aşağıdaki JSON formatında temiz bir çıktı ver, Markdown veya başka bir açıklama metni ekleme:
@@ -164,7 +148,14 @@ Bu bir yemek menüsü görseli. Pazartesi'den Cumartesi'ye kadar olan yemekleri 
       "Cacık",
       "Yoğurt",
       "Turşu"
-    ]
+    ],
+      "Icecekler": [
+         "Kola",
+         "Ayran"
+        ],
+        "Ekmek": [
+            "Ekmek"
+        ]
   }
 }
 
@@ -175,123 +166,73 @@ Kurallar:
 4. Salata, cacık, yoğurt, turşu gibi ürünleri Ekstralar dizisinde TEK TEK eleman olarak yaz.
 5. Gün isimleri TAM OLARAK şu şekilde olmalı: "Pazartesi", "Sali", "Carsamba", "Persembe", "Cuma", "Cumartesi".
 6. JSON dışında hiçbir şey döndürme.
+7. "Icecekler" alanını HER GÜN oluştur ve varsayılan olarak ["Kola","Ayran"] yaz.
+8. "Ekmek" alanını HER GÜN oluştur ve varsayılan olarak ["Ekmek"] yaz.
+9. Görselde kola, ayran veya ekmek yazmasa bile bu alanları eksiksiz oluştur.
+10. Her gün için mutlaka şu alanlar bulunsun: Corbalar, AnaYemekler, YanUrunler, Ekstralar, Icecekler, Ekmek.
 `;
 
                     const result = await model.generateContent([
                         prompt,
-                        {
-                            inlineData: {
-                                data: imageData,
-                                mimeType: "image/jpeg",
-                            },
-                        },
+                        { inlineData: { data: imageData, mimeType: "image/jpeg" } },
                     ]);
 
                     const temizJson = result.response.text().replace(/```json|```/g, "").trim();
                     const menuVerisi = JSON.parse(temizJson);
 
-                    // Doğrudan aktif menü olarak kaydet
-                    await db.collection("menuler")
-                      .doc("aktif_menu")
-                      .set(
-                        {
-                          ...menuVerisi,
-                          updatedAt: new Date().toISOString(),
-                        },
-                        { merge: true }
-                      );
+                    await db.collection("menuler").doc("aktif_menu").set({
+                        ...menuVerisi,
+                        updatedAt: new Date().toISOString(),
+                    }, { merge: true });
 
-                    console.log("Görsel başarıyla işlendi ve aktif menü güncellendi!");
-
-                } 
-                // --- 2. SENARYO: METİN MESAJI GELDİYSE HAVUZA AT ---
-                else if (mesajTuru === "text") {
+                } else if (mesajTuru === "text") {
                     const metinIcerigi = message.text.body;
-                    console.log("Metin mesajı alındı, havuza atılıyor:", metinIcerigi);
-
                     await db.collection("mesaj_havuzu").doc(messageId).set({
-                      messageId: messageId,
-                      type: "text",
-                      content: metinIcerigi,
-                      createdAt: new Date()
+                        messageId,
+                        type: "text",
+                        content: metinIcerigi,
+                        createdAt: new Date()
                     });
-                } else {
-                    console.log("Desteklenmeyen mesaj türü yoksayılıyor:", mesajTuru);
-                    // Desteklenmeyen türlerde bile mesajı işlendi olarak kaydedelim ki döngüye girmesin
-                    await db.collection("islenen_mesajlar").doc(messageId).set({
-                        createdAt: new Date().toISOString(),
-                    });
-                    return res.sendStatus(200);
                 }
 
-                // Mesajın başarıyla işlendiğini kaydederek mükerrerliği kalıcı olarak engelle
+                // Mesajı işlenmiş olarak kaydet
                 await db.collection("islenen_mesajlar").doc(messageId).set({
                     createdAt: new Date().toISOString(),
                 });
-
-            } else {
-                console.log("whatsapp_business_account objesi değil:", body.object);
             }
 
             return res.sendStatus(200);
         } catch (err) {
             console.error("Webhook hata:", err);
             return res.sendStatus(500);
-        } finally {
-            if (gorselYolu && fs.existsSync(gorselYolu)) {
-                try {
-                    fs.unlinkSync(gorselYolu);
-                } catch (cleanupErr) {
-                    console.error("Geçici dosya temizleme hatası:", cleanupErr);
-                }
-            }
-        }
+        } 
     }
 
     return res.sendStatus(404);
 });
 
-
 // ==========================================
-// 2. ZAMANLANMIŞ METİN NOTU İŞLEME FONKSİYONU (Cloud Scheduler)
+// 3. ZAMANLANMIŞ METİN NOTU İŞLEME
 // ==========================================
-exports.gunlukMenuTetikleyicisi = onSchedule({
-  schedule: "15 09 * * 1-6",
+exports.gunlukNotIsle = onSchedule({
+  schedule: "43 15 * * 1-6",
   timeZone: "Europe/Istanbul"
-}, async (event) => {
-    console.log("Havuzdaki metin notlarını toplu işleme görevi başladı...");
-
+}, async () => {
     try {
         const snapshot = await db.collection("mesaj_havuzu").get();
+        if (snapshot.empty) return;
 
-        if (snapshot.empty) {
-            console.log("Havuzda işlenecek yeni metin mesajı yok.");
-            return;
-        }
+        const metinNotlari = snapshot.docs.map(doc => doc.data().content);
 
-        let metinNotlari = [];
-        snapshot.docs.forEach(doc => {
-            metinNotlari.push(doc.data().content);
-        });
-
-        let menuVerisi = {};
         const aktifDoc = await db.collection("menuler").doc("aktif_menu").get();
-        if (aktifDoc.exists) {
-            menuVerisi = aktifDoc.data();
-        } else {
-            console.log("Aktif menü bulunamadı, metinler uygulanamıyor.");
-            return;
-        }
-
-        console.log("Toplu metin notları işleniyor:", metinNotlari);
+        if (!aktifDoc.exists) return;
+        let menuVerisi = aktifDoc.data();
 
         const bugunIngilizce = ["Pazar", "Pazartesi", "Sali", "Carsamba", "Persembe", "Cuma", "Cumartesi"];
         const bugunIndex = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Istanbul" })).getDay();
         const bugun = bugunIngilizce[bugunIndex];
 
         const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
-        console.log("Toplam işlenecek not:", snapshot.size);
-        console.log(JSON.stringify(metinNotlari, null, 2));
 
         const topluPrompt = `
 Mevcut Menü Verisi:
@@ -319,42 +260,34 @@ Kurallar:
         menuVerisi = JSON.parse(temizGuncelJson);
 
         if (!menuVerisi[bugun]) {
-          throw new Error(`${bugun} verisi Gemini çıktısında bulunamadı`);
+            throw new Error(`${bugun} verisi Gemini çıktısında bulunamadı`);
         }
 
-        await db.collection("menuler")
-          .doc("aktif_menu")
-          .set(
-            {
-              [bugun]: menuVerisi[bugun],
-              updatedAt: new Date().toISOString()
-            },
-            { merge: true }
-          );
+        await db.collection("menuler").doc("aktif_menu").set({
+            [bugun]: menuVerisi[bugun],
+            updatedAt: new Date().toISOString()
+        }, { merge: true });
 
-        // Havuz ve işlenen mesaj kayıtlarını temizle
+        // Havuz ve işlenen mesajları temizle
         const batch = db.batch();
-        snapshot.docs.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-        await batch.batchCommit ? await batch.commit() : await batch.commit();
-
+        snapshot.docs.forEach(doc => batch.delete(doc.ref));
+        
         const islenenSnapshot = await db.collection("islenen_mesajlar").get();
-        const batch2 = db.batch();
-        islenenSnapshot.docs.forEach(doc => {
-            batch2.delete(doc.ref);
-        });
-        await batch2.commit();
+        islenenSnapshot.docs.forEach(doc => batch.delete(doc.ref));
 
-        console.log("Metin notları başarıyla menüye işlendi ve veritabanı güncellendi!");
+        await batch.commit();
+        console.log("Metin notları başarıyla menüye işlendi.");
 
     } catch (error) {
         console.error("Metin toplu işleme hatası:", error);
     }
 });
 
+// ==========================================
+// 4. TATLI & MEYVE HATIRLATMA
+// ==========================================
 exports.tatliMeyveHatirlatma = onSchedule({
-  schedule: "14 09 * * 1-6",
+  schedule: "42 15 * * 1-6",
   timeZone: "Europe/Istanbul"
 }, async () => {
   try {
@@ -362,22 +295,15 @@ exports.tatliMeyveHatirlatma = onSchedule({
       "https://graph.facebook.com/v25.0/1125395517333883/messages",
       {
         messaging_product: "whatsapp",
-        to: "905539318881",
+        to: CATERING_NUMARASI,
         type: "template",
         template: {
           name: "bilgi_talebi",
-          language: {
-            code: "tr"
-          },
+          language: { code: "tr" },
           components: [
             {
               type: "body",
-              parameters: [
-                {
-                  type: "text",
-                  text: "Bugünkü tatlı ve meyve"
-                }
-              ]
+              parameters: [{ type: "text", text: "Bugünkü tatlı ve meyve" }]
             }
           ]
         }
@@ -389,13 +315,198 @@ exports.tatliMeyveHatirlatma = onSchedule({
         }
       }
     );
-
-    console.log("Tatlı ve meyve hatırlatma mesajı gönderildi.");
-
   } catch (error) {
-    console.error(
-      "Tatlı ve meyve hatırlatma hatası:",
-      error.response?.data || error.message
-    );
+    console.error("Tatlı/meyve hatırlatma hatası:", error.response?.data || error.message);
   }
+});
+
+async function gunlukSiparisOzetiGonder() {
+    const bugun = new Intl.DateTimeFormat("sv-SE", {
+        timeZone: "Europe/Istanbul",
+    }).format(new Date());
+
+    // .orderBy("sira", "asc") kısmını kaldırdık ki index hatası vermesin
+    const snapshot = await db
+        .collection("siparisler")
+        .where("tarih", "==", bugun)
+        .get();
+
+    if (snapshot.empty) {
+        await normalMesajGonder("Bugün için sipariş bulunmuyor.");
+        return;
+    }
+
+    let siparisler = [];
+    snapshot.forEach(doc => {
+        siparisler.push(doc.data());
+    });
+
+    // Sıralamayı JavaScript içinde (bellekte) yapıyoruz
+    siparisler.sort((a, b) => (a.sira || 0) - (b.sira || 0));
+
+    let mesaj = "";
+
+    siparisler.forEach(data => {
+        const siraNo = data.sira !== undefined ? data.sira : 1;
+        
+        mesaj += `${siraNo}.\n`;
+        mesaj += (data.secimler || []).join("\n");
+        mesaj += "\n\n";
+    });
+
+    await normalMesajGonder(mesaj);
+}
+exports.gunlukSiparisOzeti = onSchedule({
+    //asd
+  schedule: "52 15 * * 1-6",
+  timeZone: "Europe/Istanbul"
+}, async () => {    
+    console.log("Sipariş özeti fonksiyonu çalıştı");
+    await gunlukSiparisOzetiGonder();
+});
+// ==========================================
+// 5. UPDATE SCHEDULER (CORS Destekli)
+// ==========================================
+exports.updateScheduler = onRequest(async (req, res) => {
+
+    // 1. CORS İzinlerini Tanımla
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.set("Access-Control-Allow-Headers", "Content-Type");
+
+    // 2. Tarayıcının ön uçuş (preflight) isteğini hemen yanıtla
+    if (req.method === "OPTIONS") {
+        res.status(204).send("");
+        return;
+    }
+
+    try {
+        const { jobName, hour, minute } = req.body;
+
+        if (!jobName || hour === undefined || minute === undefined) {
+            return res.status(400).json({
+                error: "Eksik bilgi."
+            });
+        }
+
+        // Frontend'den gelen kısa adı (örn: gunlukSiparisOzeti) Firebase'in gerçek Cloud Scheduler ismine dönüştürür
+        let targetJobName = jobName;
+        if (!targetJobName.startsWith("firebase-schedule-")) {
+            targetJobName = `firebase-schedule-${jobName}-us-central1`;
+        }
+
+        const auth = new GoogleAuth({
+            scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+        });
+
+        const client = await auth.getClient();
+        const accessToken = await client.getAccessToken();
+
+        const projectId = process.env.GCLOUD_PROJECT;
+        const location = "us-central1";
+
+        const url = `https://cloudscheduler.googleapis.com/v1/projects/${projectId}/locations/${location}/jobs/${targetJobName}`;
+
+        const cron = `${minute} ${hour} * * 1-6`;
+
+        const response = await axios.patch(
+            url,
+            {
+                schedule: cron,
+                timeZone: "Europe/Istanbul",
+            },
+            {
+                params: {
+                    updateMask: "schedule,timeZone",
+                },
+                headers: {
+                    Authorization: `Bearer ${accessToken.token}`,
+                },
+            }
+        );
+
+        res.json({
+            success: true,
+            cron,
+            data: response.data,
+        });
+
+    } catch (err) {
+        console.error(err.response?.data || err);
+
+        res.status(500).json({
+            success: false,
+            error: err.response?.data || err.message,
+        });
+    }
+});
+exports.getSchedulers = onRequest(async (req, res) => {
+
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    if (req.method === "OPTIONS") {
+        return res.status(204).send("");
+    }
+
+    try {
+
+        const auth = new GoogleAuth({
+            scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+        });
+
+        const client = await auth.getClient();
+        const accessToken = await client.getAccessToken();
+
+        const projectId = process.env.GCLOUD_PROJECT;
+        const location = "us-central1";
+
+        const jobs = [
+            "firebase-schedule-gunlukSiparisOzeti-us-central1",
+            "firebase-schedule-gunlukNotIsle-us-central1",
+            "firebase-schedule-tatliMeyveHatirlatma-us-central1"
+        ];
+
+        const sonuc = [];
+
+        for (const job of jobs) {
+
+            const response = await axios.get(
+                `https://cloudscheduler.googleapis.com/v1/projects/${projectId}/locations/${location}/jobs/${job}`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${accessToken.token}`
+                    }
+                }
+            );
+
+            const cron = response.data.schedule;
+            const parts = cron.split(" ");
+
+sonuc.push({
+    id: job,
+    baslik:
+        job === "firebase-schedule-gunlukSiparisOzeti-us-central1"
+            ? "Günlük Sipariş Özeti"
+        : job === "firebase-schedule-gunlukNotIsle-us-central1"
+            ? "Günlük Not İşle"
+        : "Tatlı Meyve Hatırlatma",
+    hour: Number(parts[1]),
+    minute: Number(parts[0]),
+});
+        }
+
+        res.json(sonuc);
+
+    } catch (err) {
+
+        console.error(err.response?.data || err);
+
+        res.status(500).json({
+            error: err.message
+        });
+
+    }
+
 });

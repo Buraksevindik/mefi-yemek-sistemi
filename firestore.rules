@@ -1,18 +1,71 @@
-rules_version='2'
+rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      // This rule allows anyone with your database reference to view, edit,
-      // and delete all data in your database. It is useful for getting
-      // started, but it is configured to expire after 30 days because it
-      // leaves your app open to attackers. At that time, all client
-      // requests to your database will be denied.
-      //
-      // Make sure to write security rules for your app before that time, or
-      // else all client requests to your database will be denied until you
-      // update your rules.
-      allow read, write: if request.time < timestamp.date(2026, 8, 20);
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+             request.auth.token.email == "sevindikburak2004@gmail.com";
+    }
+
+    function isAuthorizedUser() {
+      return signedIn() && (
+        isAdmin() || 
+        request.auth.token.email.matches('.*@akdogan[.]tech')
+      );
+    }
+
+    // =========================
+    // MENÜLER
+    // =========================
+    match /menuler/{docId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // =========================
+    // STAJYERLER
+    // =========================
+    match /stajyerler/{docId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // =========================
+    // SAYAÇLAR (Sıra numarası için)
+    // =========================
+    match /sayaclar/{docId} {
+      allow read, write: if isAuthorizedUser();
+    }
+
+    // =========================
+    // SİPARİŞLER
+    // =========================
+    match /siparisler/{docId} {
+
+      allow get: if signedIn() && (
+        isAdmin() || 
+        resource.data.uid == request.auth.uid
+      );
+
+      allow list: if signedIn();
+
+      allow create: if isAuthorizedUser() && 
+                    request.resource.data.uid == request.auth.uid;
+
+      allow update: if signedIn() && (
+        isAdmin() || 
+        resource.data.uid == request.auth.uid
+      );
+
+      allow delete: if signedIn() && (
+        isAdmin() || 
+        resource.data.uid == request.auth.uid
+      );
     }
   }
 }
