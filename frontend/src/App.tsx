@@ -110,7 +110,7 @@ function App() {
       const email = currentUser.email;
       let izinliMi = false;
 
-      if (email?.endsWith("@akdogan.tech")) {
+      if (email?.endsWith("@akdogan.tech")|| email?.endsWith("@comnify.tech")) {
         izinliMi = true;
       }
 
