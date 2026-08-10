@@ -310,9 +310,20 @@ const siparisiOnayla = async () => {
     }
 
     try {
-      const bugununTarihi = new Date().toLocaleDateString("sv-SE", {
-        timeZone: "Europe/Istanbul",
-      });
+      // Eski siparişleri temizle (bugün dışındaki siparişler)
+const tumSiparisler = await getDocs(collection(db, "siparisler"));
+
+const bugununTarihi = new Date().toLocaleDateString("sv-SE", {
+  timeZone: "Europe/Istanbul",
+});
+
+for (const siparis of tumSiparisler.docs) {
+  const veri = siparis.data();
+
+  if (veri.tarih !== bugununTarihi) {
+    await deleteDoc(siparis.ref);
+  }
+}
 
       const siparislerRef = collection(db, "siparisler");
       
