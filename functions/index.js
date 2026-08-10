@@ -680,7 +680,7 @@ exports.gunlukNotIsle =
 
       if (
         schedulerDoc.exists &&
-        schedulerDoc.data().enabled === false
+        schedulerDoc.data().enabled === false 
       ) {
 
         console.log(
@@ -943,16 +943,28 @@ exports.tatliMeyveMakarnaHatirlatma =
       // KAPALI GÜN
       // ------------------------------------------------------
 
-      if (
-        await bugunKapaliMi()
-      ) {
+if (await bugunKapaliMi()) {
+  console.log(
+    "BUGÜN KAPALI. Sipariş verilmeyeceği mesajı gönderiliyor."
+  );
 
-        console.log(
-          "BUGÜN KAPALI. Tatlı/meyve/makarna mesajı GÖNDERİLMEYECEK."
-        );
+  try {
+    await templateMesajiGonder(
+      "Bugün sipariş verilmeyecektir."
+    );
 
-        return;
-      }
+    console.log(
+      "Kapalı gün mesajı gönderildi."
+    );
+  } catch (error) {
+    console.error(
+      "Kapalı gün mesajı gönderilemedi:",
+      error
+    );
+  }
+
+  return;
+}
 
 
       // ------------------------------------------------------
@@ -968,10 +980,10 @@ exports.tatliMeyveMakarnaHatirlatma =
           .get();
 
 
-      if (
-        schedulerDoc.exists &&
-        schedulerDoc.data().enabled === false
-      ) {
+if (
+  schedulerDoc.exists &&
+  schedulerDoc.data().enabled === false
+) {
 
         console.log(
           "tatliMeyveMakarnaHatirlatma pasif."
@@ -1008,35 +1020,20 @@ exports.tatliMeyveMakarnaHatirlatma =
 // ============================================================
 
 async function gunlukSiparisOzetiGonder() {
-
-  const bugun =
-    bugununTarihi();
-
+  const bugun = bugununTarihi();
 
   console.log(
     "Sipariş özeti tarihi:",
     bugun
   );
 
+  const snapshot = await db
+    .collection("siparisler")
+    .where("tarih", "==", bugun)
+    .get();
 
-  const snapshot =
-    await db
-      .collection("siparisler")
-      .where(
-        "tarih",
-        "==",
-        bugun
-      )
-      .get();
-
-
-  if (
-    snapshot.empty
-  ) {
-
-    console.log(
-      "Bugün sipariş bulunamadı."
-    );
+  if (snapshot.empty) {
+    console.log("Bugün sipariş bulunamadı.");
 
     await normalMesajGonder(
       "Bugün için sipariş bulunmuyor."
@@ -1045,61 +1042,70 @@ async function gunlukSiparisOzetiGonder() {
     return;
   }
 
+  // --------------------------------------------------------
+  // TÜM SİPARİŞLERİ TEK LİSTEDE TOPLA
+  // --------------------------------------------------------
 
-  const siparisler =
-    [];
+  const cateringEntries = [];
 
+  snapshot.forEach((doc) => {
+    const data = doc.data();
 
-  snapshot.forEach(
-    doc => {
-
-      siparisler.push(
-        doc.data()
-      );
-
+    // Kullanıcının kendi siparişi
+    if (
+      typeof data.sira === "number" &&
+      Array.isArray(data.secimler)
+    ) {
+      cateringEntries.push({
+        sira: data.sira,
+        secimler: data.secimler,
+      });
     }
+
+    // Misafir siparişleri
+    if (Array.isArray(data.misafirler)) {
+      data.misafirler.forEach((misafir) => {
+        if (
+          typeof misafir.sira === "number" &&
+          Array.isArray(misafir.secimler)
+        ) {
+          cateringEntries.push({
+            sira: misafir.sira,
+            secimler: misafir.secimler,
+          });
+        }
+      });
+    }
+  });
+
+  // --------------------------------------------------------
+  // SIRA NUMARASINA GÖRE SIRALA
+  // --------------------------------------------------------
+
+  cateringEntries.sort(
+    (a, b) => a.sira - b.sira
   );
 
-
-  // Sıra numarasına göre sırala
-
-  siparisler.sort(
-    (a, b) =>
-      (a.sira || 0) -
-      (b.sira || 0)
-  );
-
+  // --------------------------------------------------------
+  // WHATSAPP MESAJI
+  // --------------------------------------------------------
 
   let mesaj = "";
 
+  cateringEntries.forEach((entry) => {
+    mesaj += `${entry.sira}.\n`;
 
-  siparisler.forEach(
-    data => {
+    mesaj += entry.secimler.join("\n");
 
-      const siraNo =
-        data.sira !== undefined
-          ? data.sira
-          : 1;
+    mesaj += "\n\n";
+  });
 
-
-      mesaj +=
-        `${siraNo}.\n`;
-
-
-      mesaj +=
-        (data.secimler || [])
-          .join("\n");
-
-
-      mesaj +=
-        "\n\n";
-    }
-  );
-
-
-  await normalMesajGonder(
+  console.log(
+    "Catering'e gönderilecek sipariş özeti:",
     mesaj
   );
+
+  await normalMesajGonder(mesaj);
 }
 
 

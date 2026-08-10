@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Siparis } from "../../types/order";
-import { deleteOrder } from "../../services/orderService";
+import { deleteOrder, getAllSecimler } from "../../services/orderService";
 import { adminStyles } from "../../utils/styles";
 
 type OrderManagementProps = {
@@ -19,7 +19,7 @@ export default function OrderManagement({
 
   const yemekSayilari: { [key: string]: number } = {};
   siparisler.forEach((siparis) => {
-    siparis.secimler?.forEach((yemek: string) => {
+    getAllSecimler(siparis).forEach((yemek: string) => {
       yemekSayilari[yemek] = (yemekSayilari[yemek] || 0) + 1;
     });
   });
@@ -40,15 +40,44 @@ export default function OrderManagement({
     }
   };
 
-  const mesajOlustur = () => {
-    let metin = "";
-    siparisler.forEach((siparis) => {
-      metin += `${siparis.sira ?? "-"}. \n`;
-      metin += siparis.secimler.join("\n");
-      metin += "\n\n";
-    });
-    setMesaj(metin);
-  };
+const mesajOlustur = () => {
+  const entries = siparisler.flatMap((siparis) => {
+    const sonuc = [];
+
+    // Ana kullanıcının siparişi
+    if (typeof siparis.sira === "number") {
+      sonuc.push({
+        sira: siparis.sira,
+        secimler: siparis.secimler ?? [],
+      });
+    }
+
+    // Misafirlerin siparişleri
+    for (const misafir of siparis.misafirler ?? []) {
+      if (typeof misafir.sira === "number") {
+        sonuc.push({
+          sira: misafir.sira,
+          secimler: misafir.secimler ?? [],
+        });
+      }
+    }
+
+    return sonuc;
+  });
+
+  // HERKESİ kendi sıra numarasına göre sırala
+  entries.sort((a, b) => a.sira - b.sira);
+
+  let metin = "";
+
+  entries.forEach((entry) => {
+    metin += `${entry.sira}. `;
+    metin += entry.secimler.join("\n");
+    metin += "\n\n";
+  });
+
+  setMesaj(metin);
+};
 
   return (
     <div style={styles.page}>
@@ -112,11 +141,27 @@ export default function OrderManagement({
             Siparişi Sil
           </button>
           <p>{siparis.email}</p>
+          <h4>Kendi Siparişi</h4>
           <ul>
             {siparis.secimler?.map((yemek, index) => (
               <li key={index}>{yemek}</li>
             ))}
           </ul>
+          {(siparis.misafirler ?? []).length > 0 && (
+            <>
+              <h4>Misafirler</h4>
+              {(siparis.misafirler ?? []).map((misafir) => (
+                <div key={misafir.id} style={{ marginBottom: "8px" }}>
+                  <strong>{misafir.isim}</strong>
+                  <ul>
+                    {misafir.secimler.map((yemek, index) => (
+                      <li key={index}>{yemek}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       ))}
     </div>

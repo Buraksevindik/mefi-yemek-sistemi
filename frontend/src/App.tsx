@@ -3,11 +3,10 @@ import { useEffect, useState } from "react";
 import type { User } from "firebase/auth";
 import type { MenuData, AlternatifMenu } from "./types/menu";
 import { GUNLER, GUN_ISIMLERI_TURKCE } from "./types/menu";
-import type { Siparis } from "./types/order";
+import type { Siparis, PendingGuest, Misafir } from "./types/order";
 import {
   subscribeToAuthState,
   girisYap,
-  cikisYap,
   isAdmin,
 } from "./services/authService";
 import { fetchMenus } from "./services/menuService";
@@ -15,6 +14,7 @@ import {
   getTodayOrder,
   deleteTodayOrder,
   submitOrder,
+  generateGuestId,
 } from "./services/orderService";
 import { isSiparisKapali } from "./utils/date";
 import { appStyles } from "./utils/styles";
@@ -24,18 +24,34 @@ import SubmittedOrder from "./components/SubmittedOrder";
 import MenuSelection from "./components/MenuSelection";
 import AlternativeMenu from "./components/AlternativeMenu";
 import OrderSummary from "./components/OrderSummary";
+import PendingGuestsSection from "./components/PendingGuestsSection";
+import GuestOrderEditor from "./components/GuestOrderEditor";
+import MyOrders from "./components/MyOrders";
+import { cikisYap } from "./services/authService";
+
+type AppView =
+  | "main"
+  | "submitted"
+  | "existing"
+  | "myOrders"
+  | "addGuest"
+  | "editGuest";
 
 function App() {
   const [menu, setMenu] = useState<MenuData | null>(null);
   const [alternatifMenu, setAlternatifMenu] = useState<AlternatifMenu | null>(null);
   const [secimler, setSecimler] = useState<{ [kategori: string]: string }>({});
   const [secimTipi, setSecimTipi] = useState<"gunluk" | "alternatif" | null>(null);
-  const [gonderildi, setGonderildi] = useState(false);
+  const [view, setView] = useState<AppView>("main");
   const [sonSira, setSonSira] = useState<number | null>(null);
   const [mevcutSiparis, setMevcutSiparis] = useState<Siparis | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [adminSayfasi, setAdminSayfasi] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+  const [bekleyenMisafirler, setBekleyenMisafirler] = useState<PendingGuest[]>([]);
+  const [duzenlenenMisafirId, setDuzenlenenMisafirId] = useState<string | null>(null);
+  const [gonderilenSecimler, setGonderilenSecimler] = useState<string[]>([]);
+  const [gonderilenMisafirler, setGonderilenMisafirler] = useState<Misafir[]>([]);
 
   const bugunIndex = new Date().getDay();
   const bugunKey = GUNLER[bugunIndex];
@@ -63,7 +79,10 @@ function App() {
 
       if (menus.aktif) setMenu(menus.aktif);
       if (menus.alternatif) setAlternatifMenu(menus.alternatif);
-      if (siparis) setMevcutSiparis(siparis);
+      if (siparis) {
+        setMevcutSiparis(siparis);
+        setView("existing");
+      }
     };
 
     loadData();
@@ -76,13 +95,22 @@ function App() {
     }));
   };
 
+  const pendingToMisafir = (pending: PendingGuest[]): Misafir[] =>
+    pending.map((m) => ({
+      id: m.id,
+      isim: m.isim,
+      secimler: Object.values(m.secimler).filter(Boolean),
+    }));
+
   const siparisiIptalEt = async () => {
     if (siparisKapali) {
       alert("Sipariş süresi sona ermiştir.");
       return;
     }
 
-    const onay = window.confirm("Siparişinizi iptal etmek istediğinize emin misiniz?");
+    const onay = window.confirm(
+      "Siparişinizi ve tüm misafir siparişlerinizi iptal etmek istediğinize emin misiniz?"
+    );
     if (!onay) return;
 
     try {
@@ -95,11 +123,14 @@ function App() {
         return;
       }
 
-      setGonderildi(false);
+      setView("main");
       setSonSira(null);
       setMevcutSiparis(null);
       setSecimler({});
       setSecimTipi(null);
+      setBekleyenMisafirler([]);
+      setGonderilenSecimler([]);
+      setGonderilenMisafirler([]);
       alert("Sipariş iptal edildi.");
     } catch (error) {
       console.error(error);
@@ -123,22 +154,58 @@ function App() {
     if (!user) return;
 
     try {
-      const result = await submitOrder(user, gecerliSecimler);
+      const misafirler =
+        bekleyenMisafirler.length > 0 ? pendingToMisafir(bekleyenMisafirler) : undefined;
+      const result = await submitOrder(user, gecerliSecimler, misafirler);
+
+      const guncelSiparis = await getTodayOrder(user.uid);
 
       if (result.type === "updated") {
-        if (result.sira) {
-          setSonSira(result.sira);
-        }
         alert("Siparişiniz güncellendi.");
-      } else {
-        setSonSira(result.sira);
       }
 
-      setGonderildi(true);
+      setSonSira(guncelSiparis?.sira ?? result.sira);
+      setGonderilenSecimler(guncelSiparis?.secimler ?? gecerliSecimler);
+      setGonderilenMisafirler(guncelSiparis?.misafirler ?? misafirler ?? []);
+      setView("submitted");
     } catch (error) {
       console.error("Sipariş gönderilemedi:", error);
       alert("Bir hata oluştu: " + (error instanceof Error ? error.message : error));
     }
+  };
+
+  const misafirKaydet = (
+    isim: string,
+    guestSecimler: string[],
+    guestSecimTipi: "gunluk" | "alternatif"
+  ) => {
+    const secimlerObj: { [k: string]: string } = {};
+    guestSecimler.forEach((s, i) => {
+      secimlerObj[`item_${i}`] = s;
+    });
+
+    if (duzenlenenMisafirId) {
+      setBekleyenMisafirler((prev) =>
+        prev.map((m) =>
+          m.id === duzenlenenMisafirId
+            ? { ...m, isim, secimler: secimlerObj, secimTipi: guestSecimTipi }
+            : m
+        )
+      );
+      setDuzenlenenMisafirId(null);
+    } else {
+      setBekleyenMisafirler((prev) => [
+        ...prev,
+        {
+          id: generateGuestId(),
+          isim,
+          secimler: secimlerObj,
+          secimTipi: guestSecimTipi,
+        },
+      ]);
+    }
+
+    setView("main");
   };
 
   if (adminSayfasi) {
@@ -152,46 +219,115 @@ function App() {
   if (!user) {
     return <LoginScreen onGiris={girisYap} />;
   }
+const cikisButonu = (
+  <button
+    style={{
+      ...appStyles.dangerButton,
+      background: "#6b7280",
+    }}
+    onClick={async () => {
+      await cikisYap();
+      setUser(null);
+    }}
+  >
+    Çıkış Yap
+  </button>
+);
+if (view === "myOrders") {
+  return (
+    <div>
+      <div style={{ textAlign: "right", padding: "15px" }}>
+        {cikisButonu}
+      </div>
 
-  if (gonderildi) {
-    return (
-      <SubmittedOrder
-        secimler={secimler}
-        sonSira={sonSira}
+      <MyOrders
+        user={user}
+        menu={menu}
+        alternatifMenu={alternatifMenu}
         siparisKapali={siparisKapali}
         adminMi={!!adminMi}
-        onDuzenle={() => {
-          if (siparisKapali) {
-            alert("Sipariş süresi sona ermiştir.");
-            return;
+        onGeri={async () => {
+          const siparis = await getTodayOrder(user.uid);
+          if (siparis) {
+            setMevcutSiparis(siparis);
+            setView("existing");
+          } else {
+            setView("main");
           }
-          setGonderildi(false);
         }}
-        onIptal={siparisiIptalEt}
         onAdminPanel={() => setAdminSayfasi(true)}
+        onSiparisSilindi={() => {
+          setMevcutSiparis(null);
+          setView("main");
+          setSecimler({});
+          setSecimTipi(null);
+          setBekleyenMisafirler([]);
+        }}
+      />
+    </div>
+  );
+}
+
+  if (view === "addGuest" || view === "editGuest") {
+    const duzenlenen = duzenlenenMisafirId
+      ? bekleyenMisafirler.find((m) => m.id === duzenlenenMisafirId)
+      : null;
+
+    return (
+      <GuestOrderEditor
+        menu={menu}
+        alternatifMenu={alternatifMenu}
+        initialIsim={duzenlenen?.isim ?? ""}
+        initialSecimler={duzenlenen?.secimler ?? {}}
+        initialSecimTipi={duzenlenen?.secimTipi ?? null}
+        baslik={duzenlenen ? `${duzenlenen.isim} - Düzenle` : "Misafir Ekle"}
+        onKaydet={misafirKaydet}
+        onIptal={() => {
+          setDuzenlenenMisafirId(null);
+          setView("main");
+        }}
       />
     );
   }
 
-  if (mevcutSiparis) {
-    return (
+if (view === "submitted") {
+  return (
+    <div>
+      <div style={{ textAlign: "right", padding: "15px" }}>
+        {cikisButonu}
+      </div>
+
+      <SubmittedOrder
+        secimler={gonderilenSecimler}
+        misafirler={gonderilenMisafirler}
+        sonSira={sonSira}
+        siparisKapali={siparisKapali}
+        adminMi={!!adminMi}
+        onIptal={siparisiIptalEt}
+        onAdminPanel={() => setAdminSayfasi(true)}
+        onSiparislerim={() => setView("myOrders")}
+      />
+    </div>
+  );
+}
+if (view === "existing" && mevcutSiparis) {
+  return (
+    <div>
+      <div style={{ textAlign: "right", padding: "15px" }}>
+        {cikisButonu}
+      </div>
+
       <ExistingOrder
         siparis={mevcutSiparis}
         siparisKapali={siparisKapali}
         adminMi={!!adminMi}
-        onDuzenle={() => {
-          if (siparisKapali) {
-            alert("Sipariş süresi sona ermiştir.");
-            return;
-          }
-          setMevcutSiparis(null);
-          setSecimTipi(null);
-        }}
         onIptal={siparisiIptalEt}
         onAdminPanel={() => setAdminSayfasi(true)}
+        onSiparislerim={() => setView("myOrders")}
       />
-    );
-  }
+    </div>
+  );
+}
 
   return (
     <div style={appStyles.page}>
@@ -213,18 +349,6 @@ function App() {
             Admin Paneli
           </button>
         )}
-        <button
-          style={{
-            ...appStyles.dangerButton,
-            background: "#6b7280",
-          }}
-          onClick={async () => {
-            await cikisYap();
-            setUser(null);
-          }}
-        >
-          Çıkış Yap
-        </button>
       </div>
 
       {!secimTipi ? (
@@ -294,6 +418,34 @@ function App() {
               onYemekSec={yemekSec}
             />
           )}
+
+          <PendingGuestsSection
+            misafirler={bekleyenMisafirler}
+            onMisafirEkle={() => {
+              if (siparisKapali) {
+                alert("Sipariş süresi sona ermiştir.");
+                return;
+              }
+              setDuzenlenenMisafirId(null);
+              setView("addGuest");
+            }}
+            onMisafirDuzenle={(id) => {
+              if (siparisKapali) {
+                alert("Sipariş süresi sona ermiştir.");
+                return;
+              }
+              setDuzenlenenMisafirId(id);
+              setView("editGuest");
+            }}
+            onMisafirSil={(id) => {
+              if (siparisKapali) {
+                alert("Sipariş süresi sona ermiştir.");
+                return;
+              }
+              setBekleyenMisafirler((prev) => prev.filter((m) => m.id !== id));
+            }}
+            siparisKapali={siparisKapali}
+          />
 
           <OrderSummary
             secimler={secimler}
