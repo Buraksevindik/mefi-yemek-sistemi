@@ -1,12 +1,12 @@
   import type { Misafir } from "../types/order";
-  import OrderWithGuests from "./OrderWithGuests";
+  import OrderWithGuests from "./OrderDetails";
   import { appStyles } from "../utils/styles";
 
   type ExistingOrderProps = {
     siparis: {
       sira?: number;
       secimler: string[];
-      misafirler?: Misafir[];
+      misafirler?: Misafir[]; 
     };
     siparisKapali: boolean;
     adminMi: boolean;

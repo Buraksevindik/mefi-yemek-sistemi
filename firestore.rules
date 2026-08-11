@@ -12,13 +12,6 @@ service cloud.firestore {
              request.auth.token.email == "sevindikburak2004@gmail.com";
     }
 
-    function isAuthorizedUser() {
-      return signedIn() && (
-        isAdmin() || 
-        request.auth.token.email.matches('.*@akdogan[.]tech')
-      );
-    }
-
     // =========================
     // MENÜLER
     // =========================
@@ -39,7 +32,8 @@ service cloud.firestore {
     // SAYAÇLAR (Sıra numarası için)
     // =========================
     match /sayaclar/{docId} {
-      allow read, write: if isAuthorizedUser();
+      // Giriş yapmış kullanıcılar sayaç okuyabilir/güncelleyebilir
+      allow read, write: if signedIn();
     }
 
     // =========================
@@ -48,24 +42,36 @@ service cloud.firestore {
     match /siparisler/{docId} {
 
       allow get: if signedIn() && (
-        isAdmin() || 
+        isAdmin() ||
         resource.data.uid == request.auth.uid
       );
 
       allow list: if signedIn();
 
-      allow create: if isAuthorizedUser() && 
+      allow create: if signedIn() &&
                     request.resource.data.uid == request.auth.uid;
 
       allow update: if signedIn() && (
-        isAdmin() || 
+        isAdmin() ||
         resource.data.uid == request.auth.uid
       );
 
       allow delete: if signedIn() && (
-        isAdmin() || 
+        isAdmin() ||
         resource.data.uid == request.auth.uid
       );
+    }
+
+    // =========================
+    // KAPALI GÜNLER
+    // =========================
+    match /kapaliGunler/{gun} {
+
+      // Giriş yapmış herkes kapalı günleri görebilir
+      allow read: if signedIn();
+
+      // Sadece admin kapalı gün ekleyebilir/silebilir/değiştirebilir
+      allow write: if isAdmin();
     }
   }
 }

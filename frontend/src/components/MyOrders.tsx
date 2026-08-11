@@ -11,7 +11,7 @@ import {
   deleteGuest,
   deleteTodayOrder,
 } from "../services/orderService";
-import OrderWithGuests from "./OrderWithGuests";
+import OrderWithGuests from "./OrderDetails";
 import GuestOrderEditor from "./GuestOrderEditor";
 import MenuSelection from "./MenuSelection";
 import AlternativeMenu from "./AlternativeMenu";
