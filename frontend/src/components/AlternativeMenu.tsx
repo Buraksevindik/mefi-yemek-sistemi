@@ -3,7 +3,7 @@ import { appStyles } from "../utils/styles";
 
 type AlternativeMenuProps = {
   alternatifMenu: AlternatifMenu;
-  secimler: { [kategori: string]: string };
+  secimler: { [kategori: string]: string | string[] };
   onYemekSec: (kategori: string, yemek: string) => void;
 };
 

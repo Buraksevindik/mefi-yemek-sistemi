@@ -1,5 +1,5 @@
   import type { Misafir } from "../types/order";
-  import OrderWithGuests from "./OrderDetails";
+  import OrderDetails from "./OrderDetails";
   import { appStyles } from "../utils/styles";
 
   type ExistingOrderProps = {
@@ -27,7 +27,7 @@
       <div style={appStyles.page}>
         <h2>📋 Bugünkü Siparişiniz</h2>
 
-        <OrderWithGuests
+        <OrderDetails
           sira={siparis.sira}
           secimler={siparis.secimler}
           misafirler={siparis.misafirler}

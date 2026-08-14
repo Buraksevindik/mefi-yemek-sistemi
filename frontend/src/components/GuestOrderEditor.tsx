@@ -9,7 +9,7 @@ type GuestOrderEditorProps = {
   menu: MenuData | null;
   alternatifMenu: AlternatifMenu | null;
   initialIsim?: string;
-  initialSecimler?: { [kategori: string]: string };
+  initialSecimler?: { [kategori: string]: string | string[] };
   initialSecimTipi?: "gunluk" | "alternatif" | null;
   onKaydet: (isim: string, secimler: string[], secimTipi: "gunluk" | "alternatif") => void;
   onIptal: () => void;
@@ -27,7 +27,9 @@ export default function GuestOrderEditor({
   baslik = "Misafir Siparişi",
 }: GuestOrderEditorProps) {
   const [isim, setIsim] = useState(initialIsim);
-  const [secimler, setSecimler] = useState<{ [kategori: string]: string }>(initialSecimler);
+  const [secimler, setSecimler] = useState<{
+  [kategori: string]: string | string[];
+}>(initialSecimler);
   const [secimTipi, setSecimTipi] = useState<"gunluk" | "alternatif" | null>(
     initialSecimTipi || null
   );
@@ -37,11 +39,30 @@ export default function GuestOrderEditor({
   const bugununMenusu = menu?.[bugunKey];
 
   const yemekSec = (kategori: string, yemek: string) => {
-    setSecimler((prev) => ({
+  setSecimler((prev) => {
+    // EKSTRALAR: birden fazla seçim yapılabilir
+    if (kategori === "Ekstralar") {
+      const mevcutSecimler = Array.isArray(prev[kategori])
+        ? prev[kategori]
+        : [];
+
+      const zatenSecili = mevcutSecimler.includes(yemek);
+
+      return {
+        ...prev,
+        [kategori]: zatenSecili
+          ? mevcutSecimler.filter((item) => item !== yemek)
+          : [...mevcutSecimler, yemek],
+      };
+    }
+
+    // Diğer kategoriler: sadece 1 seçim
+    return {
       ...prev,
       [kategori]: prev[kategori] === yemek ? "" : yemek,
-    }));
-  };
+    };
+  });
+};
 
   const kaydet = () => {
     const trimmedIsim = isim.trim();
@@ -50,7 +71,9 @@ export default function GuestOrderEditor({
       return;
     }
 
-    const gecerliSecimler = Object.values(secimler).filter((yemek) => yemek !== "");
+    const gecerliSecimler = Object.values(secimler)
+  .flatMap((secim) => Array.isArray(secim) ? secim : [secim])
+  .filter((yemek) => yemek !== "");
     if (gecerliSecimler.length === 0) {
       alert("Lütfen en az bir yemek seçin!");
       return;

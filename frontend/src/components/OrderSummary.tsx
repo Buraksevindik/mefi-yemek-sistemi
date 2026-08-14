@@ -1,7 +1,9 @@
 import { appStyles } from "../utils/styles";
 
 type OrderSummaryProps = {
-  secimler: { [kategori: string]: string };
+  secimler: {
+  [kategori: string]: string | string[];
+};
   siparisKapali: boolean;
   onOnayla: () => void;
 };

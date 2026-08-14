@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { User } from "firebase/auth";
-import type { MenuData, AlternatifMenu } from "../types/menu";
+import type { HaftalikMenu, AlternatifMenu } from "../types/menu";
 import type { Siparis, Misafir } from "../types/order";
 import {
   getTodayOrder,
@@ -11,7 +11,7 @@ import {
   deleteGuest,
   deleteTodayOrder,
 } from "../services/orderService";
-import OrderWithGuests from "./OrderDetails";
+import OrderDetails from "./OrderDetails";
 import GuestOrderEditor from "./GuestOrderEditor";
 import MenuSelection from "./MenuSelection";
 import AlternativeMenu from "./AlternativeMenu";
@@ -20,7 +20,7 @@ import { appStyles } from "../utils/styles";
 
 type MyOrdersProps = {
   user: User;
-  menu: MenuData | null;
+  menu: HaftalikMenu  | null;
   alternatifMenu: AlternatifMenu | null;
   siparisKapali: boolean;
   adminMi: boolean;
@@ -354,7 +354,7 @@ useEffect(() => {
 
       <h1>📋 Siparişlerim </h1>
 
-<OrderWithGuests
+<OrderDetails
   sira={siparis.sira}
   secimler={siparis.secimler}
   misafirler={misafirler}

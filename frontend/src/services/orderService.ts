@@ -17,11 +17,18 @@ import {
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
-import type { Misafir, Siparis, CateringEntry } from "../types/order";
+import type {
+  Misafir,
+  Siparis,
+  CateringEntry
+} from "../types/order";
 import { getTodayDate } from "../utils/date";
 
-function mapSiparisDoc(data: QueryDocumentSnapshot<DocumentData>): Siparis {
+function mapSiparisDoc(
+  data: QueryDocumentSnapshot<DocumentData>
+): Siparis {
   const siparisData = data.data()!;
+
   return {
     id: data.id,
     isim: siparisData.isim,
@@ -31,6 +38,7 @@ function mapSiparisDoc(data: QueryDocumentSnapshot<DocumentData>): Siparis {
     secimler: siparisData.secimler ?? [],
     sira: siparisData.sira,
     misafirler: siparisData.misafirler ?? [],
+    secimTipi: siparisData.secimTipi,
   };
 }
 
@@ -223,7 +231,8 @@ async function cleanupOldOrders(bugununTarihi: string): Promise<void> {
 export async function updateOrder(
   uid: string,
   secimler: string[],
-  misafirler?: Misafir[]
+  misafirler?: Misafir[],
+  secimTipi: "gunluk" | "alternatif" = "gunluk"
 ): Promise<{ sira?: number } | null> {
   const orderDoc = await getTodayOrderDoc(uid);
 
@@ -235,45 +244,40 @@ export async function updateOrder(
 
   const updateData: Record<string, unknown> = {
     secimler,
+    secimTipi,
   };
 
-  if (misafirler !== undefined) {
-    const eskiMisafirler: Misafir[] =
-      Array.isArray(mevcutVeri.misafirler)
-        ? mevcutVeri.misafirler
-        : [];
+if (misafirler !== undefined) {
+  const eskiMisafirler: Misafir[] =
+    Array.isArray(mevcutVeri.misafirler)
+      ? mevcutVeri.misafirler
+      : [];
 
-    const yeniMisafirler =
-      await ensureGuestSiraNumbers(
+  const yeniMisafirler = await ensureGuestSiraNumbers(
+    getTodayDate(),
+    misafirler
+  );
+
+  const yeniGuestIds = new Set(
+    yeniMisafirler.map((m) => m.id)
+  );
+
+  for (const eskiMisafir of eskiMisafirler) {
+    if (
+      !yeniGuestIds.has(eskiMisafir.id) &&
+      typeof eskiMisafir.sira === "number"
+    ) {
+      await releaseOrderNumber(
         getTodayDate(),
-        misafirler
+        eskiMisafir.sira
       );
-
-    // Yeni listede olmayan eski misafirlerin
-    // sıra numaralarını serbest bırak
-    const yeniGuestIds = new Set(
-      yeniMisafirler.map((m) => m.id)
-    );
-
-    for (const eskiMisafir of eskiMisafirler) {
-      if (
-        !yeniGuestIds.has(eskiMisafir.id) &&
-        typeof eskiMisafir.sira === "number"
-      ) {
-        await releaseOrderNumber(
-          getTodayDate(),
-          eskiMisafir.sira
-        );
-      }
     }
-
-    updateData.misafirler = yeniMisafirler;
   }
 
-  await updateDoc(
-    orderDoc.ref,
-    updateData
-  );
+  updateData.misafirler = yeniMisafirler;
+}
+
+  await updateDoc(orderDoc.ref, updateData);
 
   return {
     sira: mevcutVeri.sira,
@@ -283,11 +287,15 @@ export async function updateOrder(
 export async function createOrder(
   user: User,
   secimler: string[],
-  misafirler: Misafir[] = []
+  misafirler: Misafir[] = [],
+  secimTipi: "gunluk" | "alternatif" = "gunluk"
 ): Promise<number> {
   const bugununTarihi = getTodayDate();
   const yeniSira = await getNextOrderNumber(bugununTarihi);
-  const misafirlerWithSira = await ensureGuestSiraNumbers(bugununTarihi, misafirler);
+  const misafirlerWithSira = await ensureGuestSiraNumbers(
+    bugununTarihi,
+    misafirler
+  );
 
   await addDoc(collection(db, "siparisler"), {
     isim: user.displayName,
@@ -297,6 +305,7 @@ export async function createOrder(
     misafirler: misafirlerWithSira,
     tarih: bugununTarihi,
     sira: yeniSira,
+    secimTipi,
     createdAt: serverTimestamp(),
   });
 
@@ -310,19 +319,30 @@ export type SubmitOrderResult =
 export async function submitOrder(
   user: User,
   secimler: string[],
-  misafirler?: Misafir[]
+  misafirler?: Misafir[],
+  secimTipi: "gunluk" | "alternatif" = "gunluk"
 ): Promise<SubmitOrderResult> {
   const bugununTarihi = getTodayDate();
 
   await cleanupOldOrders(bugununTarihi);
 
-  const updateResult = await updateOrder(user.uid, secimler, misafirler);
+  const updateResult = await updateOrder(
+    user.uid,
+    secimler,
+    misafirler,
+    secimTipi
+  );
 
   if (updateResult !== null) {
     return { type: "updated", sira: updateResult.sira ?? null };
   }
 
-  const yeniSira = await createOrder(user, secimler, misafirler ?? []);
+  const yeniSira = await createOrder(
+    user,
+    secimler,
+    misafirler ?? [],
+    secimTipi
+  );
   return { type: "created", sira: yeniSira };
 }
 
@@ -457,16 +477,34 @@ export async function deleteOrder(id: string): Promise<void> {
 
   await deleteDoc(orderRef);
 
-  // Ana kullanıcının sıra numarasını serbest bırak
   if (typeof sira === "number" && tarih) {
     await releaseOrderNumber(tarih, sira);
   }
 
-  // Misafirlerin sıra numaralarını da serbest bırak
   if (tarih) {
     await releaseGuestSiraNumbers(
       tarih,
       misafirler
     );
   }
+}
+
+export async function gunSonuToplaminiKaydet(): Promise<number> {
+  const bugununTarihi = getTodayDate();
+  const siparisler = await getTodayOrders();
+
+  const gunSonuRef = doc(db, "gunSonu", bugununTarihi);
+
+  await setDoc(
+    gunSonuRef,
+    {
+      tarih: bugununTarihi,
+      toplam: 0,
+      siparisSayisi: siparisler.length,
+      kaydedilmeZamani: serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  return 0;
 }

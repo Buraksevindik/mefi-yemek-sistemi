@@ -14,6 +14,7 @@ export type Siparis = {
   secimler: string[];
   sira?: number;
   misafirler?: Misafir[];
+  secimTipi?: "gunluk" | "alternatif";
 };
 
 export type PendingGuest = {

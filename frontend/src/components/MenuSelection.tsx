@@ -6,7 +6,9 @@ type MenuSelectionProps = {
   menu: MenuData | null;
   bugununMenusu: Record<string, string[]> | undefined;
   bugunKey: string;
-  secimler: { [kategori: string]: string };
+  secimler: {
+  [kategori: string]: string | string[];
+};
   onYemekSec: (kategori: string, yemek: string) => void;
 };
 
@@ -28,7 +30,7 @@ export default function MenuSelection({
   return (
     <div>
       <h3>
-        {GUN_ISIMLERI_TURKCE[bugunKey]} Menüsü (Her kategoriden en fazla 1 tane):
+    {GUN_ISIMLERI_TURKCE[bugunKey]} Menüsü
       </h3>
       {KATEGORI_SIRASI.filter((kategori) =>
         Array.isArray(bugununMenusu[kategori])
@@ -39,7 +41,9 @@ export default function MenuSelection({
           </h4>
           <ul style={{ listStyleType: "none", padding: 0 }}>
             {bugununMenusu[kategori].map((yemek: string, index: number) => {
-              const seciliMi = secimler[kategori] === yemek;
+              const seciliMi = Array.isArray(secimler[kategori])
+  ? secimler[kategori].includes(yemek)
+  : secimler[kategori] === yemek;
               return (
                 <li
                   key={index}
